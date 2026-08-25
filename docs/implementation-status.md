@@ -4,7 +4,7 @@ Updated: 2026-08-25
 
 ## Current milestone
 
-Milestone 2 — Tauri shell and multi-wiki registry: complete.
+Milestone 3 — supervised Python worker and durable jobs: in progress.
 
 ## Completed outcomes
 
@@ -26,13 +26,21 @@ Milestone 2 — Tauri shell and multi-wiki registry: complete.
 - Safe registration removal that never deletes the wiki folder or its notes.
 - Keyboard focus containment, Escape handling, visible focus states, and responsive
   layouts for Italian and English text.
+- Native multi-file selection for PDF, DOCX, TXT, and Markdown with validation and
+  a 500-document batch limit.
+- Per-wiki SQLite job catalog, stage checkpoints, recoverable-state migration,
+  background progress events, and user cancellation.
+- Versioned Python NDJSON dispatcher with capability handshake, concurrent fake-job
+  progress, cancellation, shutdown, and deterministic crash support.
+- Enabled document intake interface with selected-file summary, progress bar, and
+  localized status/error states.
 
 ## Validation evidence
 
 - `scripts/quality.ps1` passes on Windows with Rust 1.98.0 and Python 3.12.13.
-- Frontend: format, lint, strict type check, 10 tests, and production build pass.
-- Rust: format, strict Clippy, 6 contract/registry tests, and workspace tests pass.
-- Python/schema: Ruff, strict mypy, 5 tests, JSON Schema validation, and unsafe-path
+- Frontend: format, lint, strict type check, 11 tests, and production build pass.
+- Rust: format, strict Clippy, 8 contract/registry/catalog tests, and workspace tests pass.
+- Python/schema: Ruff, strict mypy, 7 tests, JSON Schema validation, and unsafe-path
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.
@@ -53,5 +61,5 @@ Milestone 2 — Tauri shell and multi-wiki registry: complete.
 
 ## Next action
 
-Implement Milestone 3: supervised Python worker IPC and durable, resumable job
-checkpoints.
+Complete Milestone 3 worker crash/restart and resume semantics, then connect the
+selected files to immutable acquisition and forced OpenDataLoader PDF OCR.

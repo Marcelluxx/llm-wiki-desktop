@@ -20,6 +20,15 @@ const messages = {
     emptyWikiHint: "Il prossimo passaggio sarà aggiungere PDF, DOCX, TXT o Markdown.",
     addDocuments: "Aggiungi documenti",
     comingNext: "Disponibile nel prossimo traguardo",
+    supportedDocuments: "PDF, DOCX, TXT e Markdown · selezione multipla",
+    selectedDocuments: "{count} documenti selezionati",
+    importRunning: "Preparazione locale dei documenti in corso. Puoi continuare a usare l’app.",
+    cancelImport: "Interrompi importazione",
+    stageQueued: "In coda",
+    stagePreparing: "Preparazione dei documenti",
+    stageCompleted: "Preparazione completata",
+    stageCancelled: "Importazione interrotta",
+    stageFailed: "Importazione non riuscita",
     wikiName: "Nome della wiki",
     folder: "Cartella",
     browse: "Sfoglia…",
@@ -53,6 +62,8 @@ const messages = {
     errorPermission: "Windows non consente di usare questa cartella. Scegline un’altra.",
     errorRegistry: "Il registro locale delle wiki non è leggibile.",
     errorGeneric: "Non è stato possibile completare l’operazione.",
+    errorUnsupportedSource: "Seleziona soltanto file PDF, DOCX, TXT o Markdown esistenti.",
+    errorNoSources: "Seleziona almeno un documento.",
   },
   en: {
     appName: "LLM Wiki",
@@ -73,6 +84,15 @@ const messages = {
     emptyWikiHint: "The next step will let you add PDF, DOCX, TXT, or Markdown files.",
     addDocuments: "Add documents",
     comingNext: "Available in the next milestone",
+    supportedDocuments: "PDF, DOCX, TXT, and Markdown · multiple selection",
+    selectedDocuments: "{count} documents selected",
+    importRunning: "Documents are being prepared locally. You can keep using the app.",
+    cancelImport: "Stop import",
+    stageQueued: "Queued",
+    stagePreparing: "Preparing documents",
+    stageCompleted: "Preparation completed",
+    stageCancelled: "Import stopped",
+    stageFailed: "Import failed",
     wikiName: "Wiki name",
     folder: "Folder",
     browse: "Browse…",
@@ -106,6 +126,8 @@ const messages = {
     errorPermission: "Windows does not allow this folder to be used. Choose another one.",
     errorRegistry: "The local wiki registry cannot be read.",
     errorGeneric: "The operation could not be completed.",
+    errorUnsupportedSource: "Select only existing PDF, DOCX, TXT, or Markdown files.",
+    errorNoSources: "Select at least one document.",
   },
 } as const;
 
@@ -130,6 +152,8 @@ export function formatAppError(reason: unknown, messages: Messages): string {
     invalid_registry: messages.errorRegistry,
     unavailable: messages.errorGeneric,
     internal: messages.errorGeneric,
+    unsupported_source: messages.errorUnsupportedSource,
+    no_sources: messages.errorNoSources,
   };
   if (code && localized[code]) return localized[code];
   return reason instanceof Error ? reason.message : messages.errorGeneric;

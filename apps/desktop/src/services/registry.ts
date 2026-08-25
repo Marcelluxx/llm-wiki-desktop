@@ -1,6 +1,12 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { RegistrySnapshot, WikiRegistration, WikiSettings } from "../contracts";
+import type {
+  JobEvent,
+  JobSummary,
+  RegistrySnapshot,
+  WikiRegistration,
+  WikiSettings,
+} from "../contracts";
 import type { Language } from "../i18n";
 
 export interface WikiInput {
@@ -19,6 +25,14 @@ export interface RegistryClient {
   removeRegistration(wikiId: string): Promise<RegistrySnapshot>;
   getWikiSettings(wikiId: string): Promise<WikiSettings>;
   pickFolder(): Promise<string | null>;
+  pickDocuments(): Promise<string[]>;
+  listJobs(wikiId: string): Promise<JobSummary[]>;
+  startImport(
+    wikiId: string,
+    sourcePaths: string[],
+    onEvent: (event: JobEvent) => void,
+  ): Promise<JobSummary>;
+  cancelJob(jobId: string): Promise<void>;
 }
 
 const browserStorageKey = "llm-wiki.preview.registry.v1";
@@ -123,5 +137,52 @@ export const registryClient: RegistryClient = {
     if (!isTauri()) return null;
     const selected = await open({ directory: true, multiple: false });
     return typeof selected === "string" ? selected : null;
+  },
+  async pickDocuments() {
+    if (!isTauri()) return [];
+    const selected = await open({
+      directory: false,
+      multiple: true,
+      filters: [{ name: "Documenti", extensions: ["pdf", "docx", "txt", "md"] }],
+    });
+    if (Array.isArray(selected)) return selected;
+    return typeof selected === "string" ? [selected] : [];
+  },
+  async listJobs(wikiId) {
+    if (isTauri()) return invoke("list_jobs", { wikiId });
+    return [];
+  },
+  async startImport(wikiId, sourcePaths, onEvent) {
+    if (isTauri()) {
+      const channel = new Channel<JobEvent>();
+      channel.onmessage = onEvent;
+      return invoke("start_import", { wikiId, sourcePaths, onEvent: channel });
+    }
+    const now = new Date().toISOString();
+    const job: JobSummary = {
+      schema_version: "1.0",
+      job_id: crypto.randomUUID(),
+      wiki_id: wikiId,
+      state: "queued",
+      stage_progress: 0,
+      source_count: sourcePaths.length,
+      created_at: now,
+      updated_at: now,
+      last_message: "stage.queued",
+    };
+    window.setTimeout(
+      () =>
+        onEvent({
+          job_id: job.job_id,
+          state: "completed",
+          progress: 1,
+          message: "stage.completed",
+        }),
+      700,
+    );
+    return job;
+  },
+  async cancelJob(jobId) {
+    if (isTauri()) await invoke("cancel_job", { jobId });
   },
 };

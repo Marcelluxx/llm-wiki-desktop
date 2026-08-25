@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/node_modules", "!!**/target", "!!**/.tools", "!!**/.venv"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/node_modules",
+      "!!**/target",
+      "!!**/.tools",
+      "!!**/.venv",
+      "!!apps/desktop/src-tauri/gen"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -87,6 +87,25 @@ export interface JobRecord {
   checkpoints: JobCheckpoint[];
 }
 
+export interface JobSummary {
+  schema_version: typeof CONTRACT_VERSION;
+  job_id: string;
+  wiki_id: string;
+  state: JobState;
+  stage_progress: number;
+  source_count: number;
+  created_at: string;
+  updated_at: string;
+  last_message: string | null;
+}
+
+export interface JobEvent {
+  job_id: string;
+  state: JobState;
+  progress: number;
+  message: string;
+}
+
 export interface SourceManifestEntry {
   schema_version: typeof CONTRACT_VERSION;
   source_id: string;

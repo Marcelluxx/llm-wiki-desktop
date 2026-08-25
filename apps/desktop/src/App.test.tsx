@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { RegistrySnapshot, WikiRegistration } from "./contracts";
+import type { JobSummary, RegistrySnapshot, WikiRegistration } from "./contracts";
 import type { RegistryClient } from "./services/registry";
 
 const wiki: WikiRegistration = {
@@ -12,6 +12,18 @@ const wiki: WikiRegistration = {
   note_language: "it",
   created_at: "2026-08-25T08:00:00Z",
   last_opened_at: "2026-08-25T08:00:00Z",
+};
+
+const queuedJob: JobSummary = {
+  schema_version: "1.0",
+  job_id: "job-test",
+  wiki_id: wiki.wiki_id,
+  state: "queued",
+  stage_progress: 0,
+  source_count: 2,
+  created_at: "2026-08-25T08:10:00Z",
+  updated_at: "2026-08-25T08:10:00Z",
+  last_message: "stage.queued",
 };
 
 function snapshot(
@@ -37,6 +49,10 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
     removeRegistration: vi.fn().mockResolvedValue(snapshot()),
     getWikiSettings: vi.fn(),
     pickFolder: vi.fn().mockResolvedValue(null),
+    pickDocuments: vi.fn().mockResolvedValue([]),
+    listJobs: vi.fn().mockResolvedValue([]),
+    startImport: vi.fn(),
+    cancelJob: vi.fn(),
   };
 }
 
@@ -64,6 +80,28 @@ describe("App", () => {
 
     expect(await screen.findByText("Questa wiki è pronta")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ricerca personale" })).toBeInTheDocument();
+  });
+
+  it("selects supported documents and starts a visible import", async () => {
+    const client = fakeClient(snapshot([wiki]));
+    vi.mocked(client.pickDocuments).mockResolvedValue([
+      "C:\\Synthetic\\manuale.pdf",
+      "C:\\Synthetic\\note.md",
+    ]);
+    vi.mocked(client.startImport).mockResolvedValue(queuedJob);
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aggiungi documenti" }));
+
+    expect(await screen.findByText("2 documenti selezionati")).toBeInTheDocument();
+    expect(screen.getByText("manuale.pdf · note.md")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveValue(0);
+    expect(client.startImport).toHaveBeenCalledWith(
+      wiki.wiki_id,
+      ["C:\\Synthetic\\manuale.pdf", "C:\\Synthetic\\note.md"],
+      expect.any(Function),
+    );
   });
 
   it("moves keyboard focus into dialogs and closes them with Escape", async () => {

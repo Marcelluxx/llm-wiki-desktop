@@ -121,6 +121,7 @@ export function App({ client = registryClient }: AppProps) {
         <WikiHome
           wiki={currentWiki}
           messages={messages}
+          client={client}
           onBack={() => setCurrentWiki(null)}
           onSettings={() => setSettingsOpen(true)}
         />

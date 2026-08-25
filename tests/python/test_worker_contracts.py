@@ -76,6 +76,63 @@ def test_worker_returns_a_versioned_ready_response() -> None:
     assert response["payload"]["status"] == "ready"
 
 
+def test_worker_streams_progress_and_completion_for_a_job() -> None:
+    request = {
+        "protocol_version": "1.0",
+        "message_type": "request",
+        "request_id": "request-1",
+        "wiki_id": "wiki-1",
+        "job_id": "job-1",
+        "payload": {"action": "start_job", "steps": 3, "delay_ms": 1, "source_count": 2},
+    }
+    output_stream = StringIO()
+
+    assert run(StringIO(json.dumps(request) + "\n"), output_stream) == 0
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+
+    assert [response["message_type"] for response in responses] == [
+        "progress",
+        "progress",
+        "progress",
+        "response",
+    ]
+    assert responses[-1]["payload"] == {"status": "completed", "processed_sources": 2}
+
+
+def test_worker_can_cancel_an_active_job() -> None:
+    start = {
+        "protocol_version": "1.0",
+        "message_type": "request",
+        "request_id": "request-start",
+        "wiki_id": "wiki-1",
+        "job_id": "job-1",
+        "payload": {"action": "start_job", "steps": 20, "delay_ms": 100},
+    }
+    cancel = {
+        "protocol_version": "1.0",
+        "message_type": "request",
+        "request_id": "request-cancel",
+        "wiki_id": "wiki-1",
+        "payload": {"action": "cancel_job", "job_id": "job-1"},
+    }
+    output_stream = StringIO()
+
+    assert run(StringIO(json.dumps(start) + "\n" + json.dumps(cancel) + "\n"), output_stream) == 0
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+
+    assert any(
+        response["request_id"] == "request-cancel"
+        and response["payload"]["status"] == "cancellation_requested"
+        for response in responses
+    )
+    assert any(
+        response["request_id"] == "request-start"
+        and response["message_type"] == "error"
+        and response["payload"]["category"] == "cancelled"
+        for response in responses
+    )
+
+
 def test_transaction_schema_rejects_paths_outside_the_wiki() -> None:
     transaction = read_json("wiki-transaction.json")
     transaction["writes"][0]["relative_path"] = "C:\\Users\\Example\\outside.md"

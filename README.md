@@ -7,6 +7,11 @@ bases.
 The MVP is under active implementation. The approved product design and executable
 implementation plan are available in `docs/superpowers/`.
 
+The current desktop build can create multiple isolated wikis, select PDF, DOCX,
+TXT, and Markdown files through the native Windows picker, and run a cancellable
+background preparation job with durable per-wiki progress. Document extraction and
+forced OpenDataLoader PDF OCR are the next implementation slices.
+
 ## Architecture
 
 - Tauri 2 + React/TypeScript desktop interface

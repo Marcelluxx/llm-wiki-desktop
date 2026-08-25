@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/publication-result.schema.json",
+  "title": "Publication result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "transaction_id",
+    "published_at",
+    "written_paths",
+    "backup_created"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "transaction_id": { "type": "string", "minLength": 1 },
+    "published_at": { "type": "string", "format": "date-time" },
+    "written_paths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "backup_created": { "type": "boolean" }
+  }
+}

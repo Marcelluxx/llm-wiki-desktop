@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/wiki-settings.schema.json",
+  "title": "Wiki settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "wiki_id",
+    "output_root",
+    "note_language",
+    "provider_id",
+    "ocr_language"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "wiki_id": { "type": "string", "minLength": 1 },
+    "output_root": { "type": "string", "minLength": 3 },
+    "note_language": { "type": "string", "minLength": 2 },
+    "provider_id": { "enum": ["codex", "claude", "antigravity", "fake"] },
+    "ocr_language": { "type": "string", "minLength": 2 },
+    "open_in_obsidian_after_publish": { "type": "boolean", "default": false }
+  }
+}

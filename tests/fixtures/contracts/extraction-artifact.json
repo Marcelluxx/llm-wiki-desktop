@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "source_id": "source-demo-pdf",
+  "extractor": "synthetic-foundation-fixture",
+  "pages": [
+    {
+      "page_number": 1,
+      "markdown": "# Documento sintetico\n\nContenuto di prova.",
+      "layout_confidence": 0.98
+    }
+  ],
+  "plain_text": "Documento sintetico. Contenuto di prova."
+}

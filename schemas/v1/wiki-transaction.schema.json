@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/wiki-transaction.schema.json",
+  "title": "Proposed wiki transaction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "transaction_id", "wiki_id", "writes", "deletes"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "transaction_id": { "type": "string", "minLength": 1 },
+    "wiki_id": { "type": "string", "minLength": 1 },
+    "writes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relative_path", "content_sha256", "markdown"],
+        "properties": {
+          "relative_path": {
+            "type": "string",
+            "pattern": "^(?![A-Za-z]:|[/\\\\]|.*\\.\\.(?:[/\\\\]|$)).+\\.md$"
+          },
+          "content_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "markdown": { "type": "string" }
+        }
+      }
+    },
+    "deletes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

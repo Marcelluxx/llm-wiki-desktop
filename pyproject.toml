@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-wiki-engine"
+version = "0.1.0"
+description = "Local extraction and knowledge-base ingest worker for LLM Wiki Desktop"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "jsonschema>=4.23,<5",
+]
+
+[project.scripts]
+llm-wiki-worker = "llm_wiki_engine.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17,<2",
+    "pytest>=8,<10",
+    "ruff>=0.12,<1",
+    "types-jsonschema>=4.25,<5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["worker/llm_wiki_engine"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+testpaths = ["tests/python"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["worker", "tests/python"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]

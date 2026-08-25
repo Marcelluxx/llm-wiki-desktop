@@ -1,0 +1,28 @@
+{
+  "message_types": ["request", "response", "progress", "error"],
+  "job_states": [
+    "queued",
+    "acquiring",
+    "extracting",
+    "ingesting",
+    "validating",
+    "staging",
+    "publishing",
+    "completed",
+    "needs_review",
+    "cancelled",
+    "failed"
+  ],
+  "source_formats": ["pdf", "docx", "txt", "md"],
+  "error_categories": [
+    "validation",
+    "invalid_request",
+    "unavailable",
+    "timeout",
+    "cancelled",
+    "internal"
+  ],
+  "review_severities": ["info", "warning", "error"],
+  "provider_ids": ["codex", "claude", "antigravity", "fake"],
+  "ingest_strategies": ["forced_layout_ocr", "direct_text", "structured_docx"]
+}

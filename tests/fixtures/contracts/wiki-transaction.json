@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "transaction_id": "transaction-demo",
+  "wiki_id": "wiki-demo",
+  "writes": [
+    {
+      "relative_path": "Concetti/Documento sintetico.md",
+      "content_sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+      "markdown": "# Documento sintetico\n\nUna nota generata per il test."
+    }
+  ],
+  "deletes": []
+}

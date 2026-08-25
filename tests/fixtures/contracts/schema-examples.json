@@ -1,0 +1,14 @@
+[
+  { "schema": "ipc-envelope.schema.json", "example": "ipc-request.json" },
+  { "schema": "ipc-envelope.schema.json", "example": "ipc-response.json" },
+  { "schema": "ipc-envelope.schema.json", "example": "ipc-progress.json" },
+  { "schema": "ipc-envelope.schema.json", "example": "ipc-error.json" },
+  { "schema": "wiki-registration.schema.json", "example": "wiki-registration.json" },
+  { "schema": "wiki-settings.schema.json", "example": "wiki-settings.json" },
+  { "schema": "job.schema.json", "example": "job.json" },
+  { "schema": "source-manifest.schema.json", "example": "source-manifest.json" },
+  { "schema": "extraction-artifact.schema.json", "example": "extraction-artifact.json" },
+  { "schema": "wiki-transaction.schema.json", "example": "wiki-transaction.json" },
+  { "schema": "review-item.schema.json", "example": "review-item.json" },
+  { "schema": "publication-result.schema.json", "example": "publication-result.json" }
+]

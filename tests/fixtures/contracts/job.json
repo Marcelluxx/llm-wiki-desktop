@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "job_id": "job-demo",
+  "wiki_id": "wiki-demo",
+  "state": "queued",
+  "stage_progress": 0.0,
+  "created_at": "2026-08-25T08:01:00Z",
+  "updated_at": "2026-08-25T08:01:00Z",
+  "checkpoints": []
+}

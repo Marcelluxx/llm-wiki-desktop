@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/ipc-envelope.schema.json",
+  "title": "IPC envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "message_type", "request_id", "payload"],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "message_type": { "enum": ["request", "response", "progress", "error"] },
+    "request_id": { "type": "string", "minLength": 1 },
+    "wiki_id": { "type": "string", "minLength": 1 },
+    "job_id": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "message_type": { "const": "progress" } } },
+      "then": {
+        "required": ["job_id"],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "progress", "message"],
+            "properties": {
+              "state": { "$ref": "#/$defs/jobState" },
+              "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "message_type": { "const": "error" } } },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["category", "message"],
+            "properties": {
+              "category": {
+                "enum": [
+                  "validation",
+                  "invalid_request",
+                  "unavailable",
+                  "timeout",
+                  "cancelled",
+                  "internal"
+                ]
+              },
+              "message": { "type": "string", "minLength": 1 },
+              "retryable": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "jobState": {
+      "enum": [
+        "queued",
+        "acquiring",
+        "extracting",
+        "ingesting",
+        "validating",
+        "staging",
+        "publishing",
+        "completed",
+        "needs_review",
+        "cancelled",
+        "failed"
+      ]
+    }
+  }
+}

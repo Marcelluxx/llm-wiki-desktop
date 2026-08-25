@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "source_id": "source-demo-pdf",
+  "original_name": "manuale sintetico.pdf",
+  "source_format": "pdf",
+  "content_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "byte_size": 2048,
+  "ingest_strategy": "forced_layout_ocr"
+}

@@ -1,0 +1,6 @@
+{
+  "protocol_version": "1.0",
+  "message_type": "request",
+  "request_id": "req-foundation-001",
+  "payload": { "action": "health" }
+}

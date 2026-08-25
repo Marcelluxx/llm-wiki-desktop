@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "transaction_id": "transaction-demo",
+  "published_at": "2026-08-25T08:10:00Z",
+  "written_paths": ["Concetti/Documento sintetico.md"],
+  "backup_created": true
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "wiki_id": "wiki-demo",
+  "output_root": "C:\\Synthetic\\WikiDemo",
+  "note_language": "it",
+  "provider_id": "fake",
+  "ocr_language": "ita+eng",
+  "open_in_obsidian_after_publish": false
+}

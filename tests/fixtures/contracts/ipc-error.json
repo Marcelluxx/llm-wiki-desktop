@@ -1,0 +1,7 @@
+{
+  "protocol_version": "1.0",
+  "message_type": "error",
+  "request_id": "req-ingest-002",
+  "job_id": "job-demo",
+  "payload": { "category": "validation", "message": "Percorso non valido", "retryable": false }
+}

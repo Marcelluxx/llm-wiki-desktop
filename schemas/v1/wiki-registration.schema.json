@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/wiki-registration.schema.json",
+  "title": "Wiki registration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "wiki_id",
+    "display_name",
+    "canonical_root",
+    "note_language",
+    "created_at",
+    "last_opened_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "wiki_id": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string", "minLength": 1 },
+    "canonical_root": { "type": "string", "minLength": 3 },
+    "note_language": { "type": "string", "minLength": 2 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "last_opened_at": { "type": "string", "format": "date-time" }
+  }
+}

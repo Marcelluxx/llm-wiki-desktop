@@ -1,0 +1,44 @@
+# JavaScript
+node_modules/
+apps/desktop/dist/
+apps/desktop/.vite/
+apps/desktop/*.tsbuildinfo
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/icons/android/
+apps/desktop/src-tauri/icons/ios/
+apps/desktop/src-tauri/icons/icon.icns
+
+# Rust
+target/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Local toolchains and caches
+.tools/
+.cache/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Runtime/user data must never enter Git
+.llm-wiki/
+*.log
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+.env.*
+!.env.example

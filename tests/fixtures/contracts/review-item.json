@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "review_id": "review-demo",
+  "job_id": "job-demo",
+  "severity": "warning",
+  "code": "possible_duplicate",
+  "message": "Verificare un possibile concetto duplicato.",
+  "status": "open",
+  "relative_path": "Concetti/Documento sintetico.md"
+}

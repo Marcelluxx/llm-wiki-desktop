@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/source-manifest.schema.json",
+  "title": "Source manifest entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_id",
+    "original_name",
+    "source_format",
+    "content_sha256",
+    "byte_size",
+    "ingest_strategy"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "source_id": { "type": "string", "minLength": 1 },
+    "original_name": { "type": "string", "minLength": 1 },
+    "source_format": { "enum": ["pdf", "docx", "txt", "md"] },
+    "content_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "byte_size": { "type": "integer", "minimum": 0 },
+    "ingest_strategy": { "enum": ["forced_layout_ocr", "direct_text", "structured_docx"] }
+  }
+}

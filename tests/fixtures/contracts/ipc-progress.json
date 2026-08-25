@@ -1,0 +1,8 @@
+{
+  "protocol_version": "1.0",
+  "message_type": "progress",
+  "request_id": "req-ingest-001",
+  "wiki_id": "wiki-demo",
+  "job_id": "job-demo",
+  "payload": { "state": "extracting", "progress": 0.5, "message": "Pagina 1 di 2" }
+}

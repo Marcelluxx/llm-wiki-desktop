@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   JobEvent,
+  JobLogEntry,
   JobSummary,
   RegistrySnapshot,
   WikiRegistration,
@@ -33,6 +34,7 @@ export interface RegistryClient {
     onEvent: (event: JobEvent) => void,
   ): Promise<JobSummary>;
   cancelJob(jobId: string): Promise<void>;
+  readJobLog(wikiId: string, jobId: string): Promise<JobLogEntry[]>;
 }
 
 const browserStorageKey = "llm-wiki.preview.registry.v1";
@@ -184,5 +186,9 @@ export const registryClient: RegistryClient = {
   },
   async cancelJob(jobId) {
     if (isTauri()) await invoke("cancel_job", { jobId });
+  },
+  async readJobLog(wikiId, jobId) {
+    if (isTauri()) return invoke("read_job_log", { wikiId, jobId });
+    return [];
   },
 };

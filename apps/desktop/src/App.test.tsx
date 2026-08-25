@@ -53,6 +53,7 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
     listJobs: vi.fn().mockResolvedValue([]),
     startImport: vi.fn(),
     cancelJob: vi.fn(),
+    readJobLog: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -88,7 +89,18 @@ describe("App", () => {
       "C:\\Synthetic\\manuale.pdf",
       "C:\\Synthetic\\note.md",
     ]);
-    vi.mocked(client.startImport).mockResolvedValue(queuedJob);
+    vi.mocked(client.startImport).mockImplementation(async (_wikiId, _paths, onEvent) => {
+      onEvent({
+        job_id: queuedJob.job_id,
+        state: "acquiring",
+        progress: 0.2,
+        message: "source.acquired",
+        log_level: "info",
+        source: "manuale.pdf",
+        detail: "sha256=abc123",
+      });
+      return queuedJob;
+    });
     render(<App client={client} />);
 
     fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
@@ -97,6 +109,7 @@ describe("App", () => {
     expect(await screen.findByText("2 documenti selezionati")).toBeInTheDocument();
     expect(screen.getByText("manuale.pdf · note.md")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveValue(0);
+    expect(screen.getByText(/source.acquired/)).toBeInTheDocument();
     expect(client.startImport).toHaveBeenCalledWith(
       wiki.wiki_id,
       ["C:\\Synthetic\\manuale.pdf", "C:\\Synthetic\\note.md"],

@@ -476,6 +476,57 @@ label small,
   accent-color: var(--green);
 }
 
+.log-area {
+  width: min(100%, 48rem);
+  margin-top: 1rem;
+}
+
+.log-console {
+  max-height: 18rem;
+  padding: 1rem;
+  overflow: auto;
+  border: 1px solid #263d37;
+  border-radius: 0.9rem;
+  color: #dbe9e4;
+  background: #12231f;
+  text-align: left;
+}
+
+.log-console__header {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgb(219 233 228 / 15%);
+}
+
+.log-console p {
+  margin: 1rem 0 0;
+  color: #a9bbb5;
+}
+
+.log-console ol {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0;
+  margin: 0.9rem 0 0;
+  list-style: none;
+}
+
+.log-console li {
+  display: grid;
+  grid-template-columns: 5rem 4rem minmax(0, 1fr);
+  gap: 0.6rem;
+  color: #a9bbb5;
+  font-size: 0.73rem;
+}
+
+.log-console code {
+  overflow-wrap: anywhere;
+  color: #eaf3f0;
+  font-family: "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 30;
@@ -591,6 +642,15 @@ select {
   font-family: inherit;
   font-size: 0.78rem;
   font-weight: 500;
+}
+
+.log-console li[data-level="error"] span,
+.log-console li[data-level="error"] code {
+  color: #ffaaa2;
+}
+
+.log-console li[data-level="warning"] span {
+  color: #ffd18b;
 }
 
 .danger-zone {

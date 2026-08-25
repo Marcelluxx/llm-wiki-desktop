@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { JobEvent, JobSummary, WikiRegistration } from "../contracts";
+import type { JobEvent, JobLogEntry, JobSummary, WikiRegistration } from "../contracts";
 import type { Messages } from "../i18n";
 import { formatAppError } from "../i18n";
 import type { RegistryClient } from "../services/registry";
@@ -16,16 +16,43 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [selectedNames, setSelectedNames] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<JobLogEntry[]>([]);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const activeJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(job.state));
 
   useEffect(() => {
     void client
       .listJobs(wiki.wiki_id)
-      .then(setJobs)
+      .then((loadedJobs) => {
+        setJobs(loadedJobs);
+        const latestJob = loadedJobs[0];
+        if (latestJob) {
+          setSelectedJobId(latestJob.job_id);
+          return client.readJobLog(wiki.wiki_id, latestJob.job_id).then(setLogs);
+        }
+        return undefined;
+      })
       .catch(() => undefined);
   }, [client, wiki.wiki_id]);
 
   function applyEvent(event: JobEvent) {
+    if (event.log_level) {
+      const entry: JobLogEntry = {
+        timestamp: new Date().toISOString(),
+        level: event.log_level,
+        job_id: event.job_id,
+        state: event.state,
+        message: event.message,
+        source: event.source ?? null,
+        detail: event.detail ?? null,
+      };
+      setLogs((current) => [...current, entry].slice(-300));
+      const consoleMessage = `[LLM Wiki][${event.job_id}] ${event.message}${event.source ? ` (${event.source})` : ""}`;
+      if (event.log_level === "error") console.error(consoleMessage, event.detail ?? "");
+      else if (event.log_level === "warning") console.warn(consoleMessage, event.detail ?? "");
+      else console.info(consoleMessage, event.detail ?? "");
+    }
     setJobs((current) =>
       current.map((job) =>
         job.job_id === event.job_id
@@ -47,7 +74,10 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
       const paths = await client.pickDocuments();
       if (paths.length === 0) return;
       setSelectedNames(paths.map(fileName));
+      setLogs([]);
+      setLogsOpen(true);
       const job = await client.startImport(wiki.wiki_id, paths, applyEvent);
+      setSelectedJobId(job.job_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
     } catch (reason) {
       setError(formatAppError(reason, messages));
@@ -122,9 +152,54 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
           {messages.addDocuments}
         </button>
         <small>{messages.supportedDocuments}</small>
+        {selectedJobId && (
+          <div className="log-area">
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setLogsOpen((value) => !value)}
+              aria-expanded={logsOpen}
+            >
+              {logsOpen ? messages.hideLogs : messages.showLogs}
+            </button>
+            {logsOpen && (
+              <section className="log-console" aria-label={messages.processingLogs}>
+                <div className="log-console__header">
+                  <strong>{messages.processingLogs}</strong>
+                  <span>{logs.length}</span>
+                </div>
+                {logs.length === 0 ? (
+                  <p>{messages.noLogs}</p>
+                ) : (
+                  <ol>
+                    {logs.map((entry) => (
+                      <li
+                        key={`${entry.timestamp}-${entry.level}-${entry.message}-${entry.source ?? ""}-${entry.detail ?? ""}`}
+                        data-level={entry.level}
+                      >
+                        <time>{formatLogTime(entry.timestamp)}</time>
+                        <span>{entry.level.toUpperCase()}</span>
+                        <code>
+                          {entry.message}
+                          {entry.source ? ` · ${entry.source}` : ""}
+                          {entry.detail ? ` · ${entry.detail}` : ""}
+                        </code>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            )}
+          </div>
+        )}
       </section>
     </main>
   );
+}
+
+function formatLogTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "--:--:--" : date.toLocaleTimeString();
 }
 
 function fileName(path: string): string {

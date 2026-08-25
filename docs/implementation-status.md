@@ -4,7 +4,7 @@ Updated: 2026-08-25
 
 ## Current milestone
 
-Milestone 3 — supervised Python worker and durable jobs: in progress.
+Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
 
 ## Completed outcomes
 
@@ -34,13 +34,25 @@ Milestone 3 — supervised Python worker and durable jobs: in progress.
   progress, cancellation, shutdown, and deterministic crash support.
 - Enabled document intake interface with selected-file summary, progress bar, and
   localized status/error states.
+- Actual source paths now cross the Rust/Python boundary; the worker hashes and
+  atomically copies originals into per-wiki content-addressed storage.
+- Local DOCX extraction preserves headings, paragraphs, lists, and tables; TXT and
+  Markdown bypass OCR while retaining their source structure.
+- OpenDataLoader PDF 2.5.5 and its hybrid dependencies are pinned. PDF jobs start a
+  loopback-only backend and use full hybrid processing with force OCR enabled,
+  including for digital PDFs.
+- Each processed source produces a validated Markdown artifact and an
+  Obsidian-ready note under `sources/`.
+- Structured JSONL job logs are persisted inside each wiki, exposed in the wiki
+  interface, and mirrored to the browser, Rust, and worker consoles. OCR backend
+  output is retained as a separate diagnostic log.
 
 ## Validation evidence
 
 - `scripts/quality.ps1` passes on Windows with Rust 1.98.0 and Python 3.12.13.
 - Frontend: format, lint, strict type check, 11 tests, and production build pass.
 - Rust: format, strict Clippy, 8 contract/registry/catalog tests, and workspace tests pass.
-- Python/schema: Ruff, strict mypy, 7 tests, JSON Schema validation, and unsafe-path
+- Python/schema: Ruff, strict mypy, 10 tests, JSON Schema validation, and unsafe-path
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.
@@ -61,5 +73,6 @@ Milestone 3 — supervised Python worker and durable jobs: in progress.
 
 ## Next action
 
-Complete Milestone 3 worker crash/restart and resume semantics, then connect the
-selected files to immutable acquisition and forced OpenDataLoader PDF OCR.
+Add extraction caching/resume semantics and synthetic PDF OCR fixtures, then build
+the provider-neutral AI ingest that creates concepts, entities, syntheses, and
+indexes from the extracted source notes.

@@ -104,6 +104,19 @@ export interface JobEvent {
   state: JobState;
   progress: number;
   message: string;
+  log_level?: string;
+  source?: string;
+  detail?: string;
+}
+
+export interface JobLogEntry {
+  timestamp: string;
+  level: string;
+  job_id: string;
+  state: string;
+  message: string;
+  source: string | null;
+  detail: string | null;
 }
 
 export interface SourceManifestEntry {

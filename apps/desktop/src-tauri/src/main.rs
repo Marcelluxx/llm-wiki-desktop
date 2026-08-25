@@ -63,6 +63,24 @@ struct JobEvent {
     state: JobState,
     progress: f64,
     message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JobLogEntry {
+    timestamp: String,
+    level: String,
+    job_id: String,
+    state: String,
+    message: String,
+    source: Option<String>,
+    detail: Option<String>,
 }
 
 fn with_registry<T>(
@@ -169,6 +187,7 @@ async fn start_import(
 ) -> Result<JobSummary, CommandError> {
     validate_sources(&source_paths)?;
     let wiki = with_registry(state.clone(), |registry| registry.open_wiki(&wiki_id))?;
+    let settings = with_registry(state.clone(), |registry| registry.read_settings(&wiki_id))?;
     let catalog = WikiCatalog::open(&wiki.canonical_root)?;
     let source_count = u32::try_from(source_paths.len()).map_err(|_| CommandError {
         code: "too_many_sources",
@@ -186,12 +205,58 @@ async fn start_import(
     let task_job = job.clone();
     let wiki_root = PathBuf::from(wiki.canonical_root);
     tauri::async_runtime::spawn(async move {
-        run_worker_job(task_job.clone(), wiki_root, on_event, cancel_receiver).await;
+        run_worker_job(
+            task_job.clone(),
+            wiki_root,
+            source_paths,
+            settings.ocr_language,
+            on_event,
+            cancel_receiver,
+        )
+        .await;
         if let Ok(mut jobs) = active_jobs.lock() {
             jobs.remove(&task_job.job_id);
         }
     });
     Ok(job)
+}
+
+#[tauri::command]
+fn read_job_log(
+    wiki_id: String,
+    job_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<JobLogEntry>, CommandError> {
+    Uuid::parse_str(&job_id).map_err(|_| CommandError {
+        code: "invalid_job",
+        message: "The job identifier is invalid".to_owned(),
+    })?;
+    let wiki = with_registry(state, |registry| registry.open_wiki(&wiki_id))?;
+    let log_path = Path::new(&wiki.canonical_root)
+        .join(".llm-wiki")
+        .join("logs")
+        .join(format!("{job_id}.jsonl"));
+    if !log_path.is_file() {
+        return Ok(Vec::new());
+    }
+    let metadata = std::fs::metadata(&log_path).map_err(|error| CommandError {
+        code: "log_unavailable",
+        message: error.to_string(),
+    })?;
+    if metadata.len() > 5 * 1024 * 1024 {
+        return Err(CommandError {
+            code: "log_too_large",
+            message: "The job log exceeds the 5 MB display limit".to_owned(),
+        });
+    }
+    let content = std::fs::read_to_string(log_path).map_err(|error| CommandError {
+        code: "log_unavailable",
+        message: error.to_string(),
+    })?;
+    Ok(content
+        .lines()
+        .filter_map(|line| serde_json::from_str::<JobLogEntry>(line).ok())
+        .collect())
 }
 
 #[tauri::command]
@@ -241,6 +306,8 @@ fn validate_sources(source_paths: &[String]) -> Result<(), CommandError> {
 async fn run_worker_job(
     job: JobSummary,
     wiki_root: PathBuf,
+    source_paths: Vec<String>,
+    ocr_language: String,
     on_event: Channel<JobEvent>,
     mut cancel_receiver: watch::Receiver<bool>,
 ) {
@@ -270,6 +337,14 @@ async fn run_worker_job(
             return;
         }
     };
+    if let Some(stderr) = child.stderr.take() {
+        tauri::async_runtime::spawn(async move {
+            let mut stderr_lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = stderr_lines.next_line().await {
+                eprintln!("[LLM Wiki worker] {line}");
+            }
+        });
+    }
     let mut lines = BufReader::new(stdout).lines();
     let handshake_id = Uuid::new_v4().to_string();
     let handshake = json!({
@@ -295,8 +370,9 @@ async fn run_worker_job(
         "payload": {
             "action": "start_job",
             "source_count": job.source_count,
-            "steps": 10,
-            "delay_ms": 180
+            "source_paths": source_paths,
+            "wiki_root": wiki_root,
+            "ocr_language": ocr_language
         }
     });
     if write_worker_message(&mut stdin, &request).await.is_err() {
@@ -388,12 +464,44 @@ fn handle_worker_event(
                 .get("message")
                 .and_then(|value| value.as_str())
                 .unwrap_or("stage.working");
+            let log_level = envelope
+                .payload
+                .get("log_level")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let source = envelope
+                .payload
+                .get("source")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let detail = envelope
+                .payload
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            if let Some(level) = &log_level {
+                println!(
+                    "[LLM Wiki][{level}][{}] {message}{}{}",
+                    job.job_id,
+                    source
+                        .as_deref()
+                        .map(|value| format!(" ({value})"))
+                        .unwrap_or_default(),
+                    detail
+                        .as_deref()
+                        .map(|value| format!(": {value}"))
+                        .unwrap_or_default()
+                );
+            }
             let _ = catalog.update_job(&job.job_id, state, progress, Some(message));
             let _ = channel.send(JobEvent {
                 job_id: job.job_id.clone(),
                 state,
                 progress,
                 message: message.to_owned(),
+                log_level,
+                source,
+                detail,
             });
             false
         }
@@ -409,6 +517,9 @@ fn handle_worker_event(
                 state: JobState::Completed,
                 progress: 1.0,
                 message: "stage.completed".to_owned(),
+                log_level: Some("info".to_owned()),
+                source: None,
+                detail: None,
             });
             true
         }
@@ -428,12 +539,23 @@ fn handle_worker_event(
             } else {
                 "stage.failed"
             };
+            let detail = envelope
+                .payload
+                .get("detail")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            if let Some(value) = &detail {
+                eprintln!("[LLM Wiki][ERROR][{}] {message}: {value}", job.job_id);
+            }
             let _ = catalog.update_job(&job.job_id, state, 0.0, Some(message));
             let _ = channel.send(JobEvent {
                 job_id: job.job_id.clone(),
                 state,
                 progress: 0.0,
                 message: message.to_owned(),
+                log_level: Some(if cancelled { "warning" } else { "error" }.to_owned()),
+                source: None,
+                detail,
             });
             true
         }
@@ -453,6 +575,9 @@ fn finish_with_error(
         state: JobState::Failed,
         progress: 0.0,
         message: message.to_owned(),
+        log_level: Some("error".to_owned()),
+        source: None,
+        detail: None,
     });
 }
 
@@ -468,7 +593,7 @@ fn worker_command() -> Command {
         .current_dir(repository_root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     command
 }
 
@@ -526,7 +651,8 @@ fn main() {
             get_wiki_settings,
             list_jobs,
             start_import,
-            cancel_job
+            cancel_job,
+            read_job_log
         ])
         .run(tauri::generate_context!())
         .expect("error while running LLM Wiki Desktop");

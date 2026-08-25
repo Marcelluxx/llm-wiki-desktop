@@ -26,7 +26,10 @@
             "properties": {
               "state": { "$ref": "#/$defs/jobState" },
               "progress": { "type": "number", "minimum": 0, "maximum": 1 },
-              "message": { "type": "string" }
+              "message": { "type": "string" },
+              "log_level": { "enum": ["debug", "info", "warning", "error"] },
+              "source": { "type": "string" },
+              "detail": { "type": "string" }
             }
           }
         }
@@ -52,7 +55,8 @@
                 ]
               },
               "message": { "type": "string", "minLength": 1 },
-              "retryable": { "type": "boolean" }
+              "retryable": { "type": "boolean" },
+              "detail": { "type": "string" }
             }
           }
         }

@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import os
 import threading
+import traceback
 from dataclasses import dataclass
 from typing import Any, TextIO
 
 from .contracts import CONTRACT_VERSION, ErrorCategory, IpcEnvelope, JobState, MessageType
+from .ingestion import IngestionCancelled, JobProcessor
 
-WORKER_VERSION = "0.2.0"
-CAPABILITIES = ("handshake", "progress", "cancellation", "fake_job")
+WORKER_VERSION = "0.3.0"
+CAPABILITIES = ("handshake", "progress", "cancellation", "ingest_documents", "job_logs")
 
 
 @dataclass(slots=True)
@@ -80,12 +82,16 @@ class WorkerRuntime:
             )
             return
 
+        source_paths = request.payload.get("source_paths")
+        is_real_job = isinstance(source_paths, list)
         steps = bounded_integer(request.payload.get("steps", 8), minimum=1, maximum=100)
         delay_ms = bounded_integer(request.payload.get("delay_ms", 180), minimum=1, maximum=60_000)
         cancellation = threading.Event()
         thread = threading.Thread(
-            target=self._run_fake_job,
-            args=(request, cancellation, steps, delay_ms),
+            target=self._run_ingestion_job if is_real_job else self._run_fake_job,
+            args=(request, cancellation)
+            if is_real_job
+            else (request, cancellation, steps, delay_ms),
             name=f"llm-wiki-job-{request.job_id}",
         )
         with self._jobs_lock:
@@ -99,6 +105,70 @@ class WorkerRuntime:
                 return
             self._jobs[request.job_id] = ActiveJob(cancellation, thread)
         thread.start()
+
+    def _run_ingestion_job(self, request: IpcEnvelope, cancellation: threading.Event) -> None:
+        assert request.job_id is not None
+        processor: JobProcessor | None = None
+        try:
+            source_values = request.payload.get("source_paths")
+            if not isinstance(source_values, list) or not all(
+                isinstance(value, str) for value in source_values
+            ):
+                raise ValueError("source_paths must be a list of paths")
+            wiki_root = request.payload.get("wiki_root")
+            if not isinstance(wiki_root, str) or not wiki_root:
+                raise ValueError("wiki_root is required")
+            from pathlib import Path
+
+            processor = JobProcessor(
+                job_id=request.job_id,
+                wiki_id=request.wiki_id or "unknown",
+                wiki_root=Path(wiki_root),
+                source_paths=[Path(value) for value in source_values],
+                ocr_language=str(request.payload.get("ocr_language", "ita+eng")),
+                cancellation=cancellation,
+                emit=lambda state, progress, message, level, source, detail: self._write(
+                    request,
+                    MessageType.PROGRESS,
+                    {
+                        "state": state.value,
+                        "progress": progress,
+                        "message": message,
+                        "log_level": level,
+                        "source": source,
+                        "detail": detail,
+                    },
+                ),
+            )
+            processed = processor.run()
+            self._write(
+                request,
+                MessageType.RESPONSE,
+                {"status": "completed", "processed_sources": processed},
+            )
+        except IngestionCancelled:
+            if processor is not None:
+                processor.log_cancelled()
+            self._write_error(
+                request,
+                ErrorCategory.CANCELLED,
+                "Job cancelled",
+                retryable=True,
+            )
+        except Exception as error:
+            detail = "".join(traceback.format_exception_only(type(error), error)).strip()
+            if processor is not None:
+                processor.log_failure(detail)
+            self._write_error(
+                request,
+                ErrorCategory.INTERNAL,
+                "Document processing failed",
+                retryable=True,
+                detail=detail,
+            )
+        finally:
+            with self._jobs_lock:
+                self._jobs.pop(request.job_id, None)
 
     def _cancel_job(self, request: IpcEnvelope) -> None:
         job_id = str(request.payload.get("job_id", ""))
@@ -173,11 +243,19 @@ class WorkerRuntime:
         message: str,
         *,
         retryable: bool,
+        detail: str | None = None,
     ) -> None:
+        payload: dict[str, Any] = {
+            "category": category.value,
+            "message": message,
+            "retryable": retryable,
+        }
+        if detail is not None:
+            payload["detail"] = detail
         self._write(
             request,
             MessageType.ERROR,
-            {"category": category.value, "message": message, "retryable": retryable},
+            payload,
         )
 
     def _write(

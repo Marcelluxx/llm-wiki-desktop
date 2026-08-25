@@ -8,9 +8,16 @@ The MVP is under active implementation. The approved product design and executab
 implementation plan are available in `docs/superpowers/`.
 
 The current desktop build can create multiple isolated wikis, select PDF, DOCX,
-TXT, and Markdown files through the native Windows picker, and run a cancellable
-background preparation job with durable per-wiki progress. Document extraction and
-forced OpenDataLoader PDF OCR are the next implementation slices.
+TXT, and Markdown files through the native Windows picker, and process them in a
+cancellable background job. Originals are copied into immutable content-addressed
+storage, DOCX/TXT/MD files are converted locally, and every PDF is sent through the
+OpenDataLoader full hybrid force-OCR route. Obsidian-ready source notes, extraction
+artifacts, durable progress, and per-job logs are stored inside the selected wiki.
+
+Processing logs are visible from the wiki screen and are also streamed to the
+application console. The complete JSONL history is kept under
+`.llm-wiki/logs/<job-id>.jsonl`; OpenDataLoader backend output is kept beside it for
+PDF diagnostics.
 
 ## Architecture
 
@@ -26,11 +33,13 @@ forced OpenDataLoader PDF OCR are the next implementation slices.
 - Node.js 24 or another version supported by the locked frontend toolchain
 - Rust 1.98.0 MSVC toolchain
 - Python 3.12 through 3.14
+- Java 11 or newer for local OpenDataLoader hybrid OCR
 - `uv`
 - Microsoft C++ Build Tools and WebView2 for Tauri development
 
-End users will not need development tools, system Python, or system Java. Those
-runtime dependencies will be packaged by the release milestone.
+End users will not need development tools, system Python, or system Java once the
+release packaging milestone bundles those runtimes. The current developer build
+uses the isolated `.venv` plus the locally available Java runtime.
 
 ## Isolated developer setup
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from io import StringIO
 from pathlib import Path
 from typing import Any, cast
 
+from docx import Document
 from jsonschema import Draft202012Validator, FormatChecker
 from llm_wiki_engine.cli import run
 from llm_wiki_engine.contracts import (
@@ -131,6 +133,107 @@ def test_worker_can_cancel_an_active_job() -> None:
         and response["payload"]["category"] == "cancelled"
         for response in responses
     )
+
+
+def test_worker_acquires_and_extracts_real_text_and_markdown(tmp_path: Path) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    database = sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3")
+    database.executescript(
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY);"
+        "CREATE TABLE source_records ("
+        "source_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
+        "original_name TEXT NOT NULL, source_format TEXT NOT NULL, "
+        "content_sha256 TEXT, byte_size INTEGER);"
+        "INSERT INTO jobs VALUES ('job-real');"
+    )
+    database.close()
+    text_source = tmp_path / "appunti.txt"
+    markdown_source = tmp_path / "manuale.md"
+    text_source.write_text("Contenuto di prova", encoding="utf-8")
+    markdown_source.write_text("# Titolo\n\nTesto strutturato", encoding="utf-8")
+    request = real_job_request(
+        wiki_root,
+        "job-real",
+        [text_source, markdown_source],
+    )
+    output_stream = StringIO()
+
+    assert run(StringIO(json.dumps(request) + "\n"), output_stream) == 0
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+
+    assert responses[-1]["message_type"] == "response"
+    assert responses[-1]["payload"]["processed_sources"] == 2
+    assert len(list((wiki_root / "sources").glob("*.md"))) == 2
+    assert len(list((wiki_root / ".llm-wiki" / "raw").rglob("*.txt"))) == 1
+    assert (wiki_root / ".llm-wiki" / "logs" / "job-real.jsonl").is_file()
+
+
+def test_worker_extracts_docx_structure(tmp_path: Path) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    database = sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3")
+    database.executescript(
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY);"
+        "CREATE TABLE source_records ("
+        "source_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
+        "original_name TEXT NOT NULL, source_format TEXT NOT NULL, "
+        "content_sha256 TEXT, byte_size INTEGER);"
+        "INSERT INTO jobs VALUES ('job-docx');"
+    )
+    database.close()
+    source = tmp_path / "struttura.docx"
+    document = Document()
+    document.add_heading("Capitolo", level=1)
+    document.add_paragraph("Paragrafo")
+    document.save(str(source))
+    output_stream = StringIO()
+
+    assert (
+        run(
+            StringIO(json.dumps(real_job_request(wiki_root, "job-docx", [source])) + "\n"),
+            output_stream,
+        )
+        == 0
+    )
+
+    note = next((wiki_root / "sources").glob("*.md")).read_text(encoding="utf-8")
+    assert "# Capitolo" in note
+    assert "Paragrafo" in note
+
+
+def test_worker_persists_a_visible_error_log(tmp_path: Path) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    output_stream = StringIO()
+    request = real_job_request(wiki_root, "job-error", [tmp_path / "missing.txt"])
+
+    assert run(StringIO(json.dumps(request) + "\n"), output_stream) == 0
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+
+    assert responses[-1]["message_type"] == "error"
+    assert "detail" in responses[-1]["payload"]
+    log_content = (wiki_root / ".llm-wiki" / "logs" / "job-error.jsonl").read_text(encoding="utf-8")
+    assert '"level":"error"' in log_content
+
+
+def real_job_request(wiki_root: Path, job_id: str, sources: list[Path]) -> dict[str, object]:
+    return {
+        "protocol_version": "1.0",
+        "message_type": "request",
+        "request_id": f"request-{job_id}",
+        "wiki_id": "wiki-real",
+        "job_id": job_id,
+        "payload": {
+            "action": "start_job",
+            "source_paths": [str(source) for source in sources],
+            "wiki_root": str(wiki_root),
+            "ocr_language": "ita+eng",
+        },
+    }
 
 
 def test_transaction_schema_rejects_paths_outside_the_wiki() -> None:

@@ -1,8 +1,11 @@
 # LLM Wiki Desktop — Product and Architecture Design
 
-Date: 2026-08-25  
-Status: Approved by user  
-Target: Windows 10/11 x64  
+Date: 2026-08-25
+
+Status: Approved by user
+
+Target: Windows 10/11 x64
+
 Working directory: `E:\PROGETTI\llm-wiki-desktop`
 
 ## 1. Purpose

@@ -54,6 +54,12 @@ export interface WikiRegistration {
   last_opened_at: string;
 }
 
+export interface RegistrySnapshot {
+  schema_version: typeof CONTRACT_VERSION;
+  interface_language: "it" | "en" | null;
+  wikis: WikiRegistration[];
+}
+
 export interface WikiSettings {
   schema_version: typeof CONTRACT_VERSION;
   wiki_id: string;

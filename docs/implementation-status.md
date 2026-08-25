@@ -4,7 +4,7 @@ Updated: 2026-08-25
 
 ## Current milestone
 
-Milestone 1 — Repository foundation and contracts: complete.
+Milestone 2 — Tauri shell and multi-wiki registry: complete.
 
 ## Completed outcomes
 
@@ -19,16 +19,25 @@ Milestone 1 — Repository foundation and contracts: complete.
   extraction, review, transactions, and publication.
 - Isolated PowerShell bootstrap, unified quality command, and Windows GitHub Actions
   quality gates including secret scanning.
+- Bilingual first-run experience, responsive **Your wikis** dashboard, create/connect
+  flow, empty wiki home, and global/wiki settings panel.
+- Rust-backed local registry with stable wiki identifiers, canonical Windows paths,
+  native folder picker, and isolated visible/internal wiki skeletons.
+- Safe registration removal that never deletes the wiki folder or its notes.
+- Keyboard focus containment, Escape handling, visible focus states, and responsive
+  layouts for Italian and English text.
 
 ## Validation evidence
 
 - `scripts/quality.ps1` passes on Windows with Rust 1.98.0 and Python 3.12.13.
-- Frontend: format, lint, strict type check, 3 tests, and production build pass.
-- Rust: format, strict Clippy, 2 contract tests, and workspace tests pass.
+- Frontend: format, lint, strict type check, 10 tests, and production build pass.
+- Rust: format, strict Clippy, 6 contract/registry tests, and workspace tests pass.
 - Python/schema: Ruff, strict mypy, 5 tests, JSON Schema validation, and unsafe-path
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.
+- Browser inspection confirmed unclipped first-run, empty-dashboard, create-dialog,
+  settings, Italian/English expansion, and initial keyboard focus behavior.
 
 ## Active assumptions
 
@@ -44,5 +53,5 @@ Milestone 1 — Repository foundation and contracts: complete.
 
 ## Next action
 
-Implement Milestone 2: the Tauri application shell and persistent multi-wiki
-registry, without deleting wiki folders when registrations are removed.
+Implement Milestone 3: supervised Python worker IPC and durable, resumable job
+checkpoints.

@@ -92,12 +92,12 @@ describe("App", () => {
     vi.mocked(client.startImport).mockImplementation(async (_wikiId, _paths, onEvent) => {
       onEvent({
         job_id: queuedJob.job_id,
-        state: "acquiring",
-        progress: 0.2,
-        message: "source.acquired",
+        state: "extracting",
+        progress: 0.72,
+        message: "ocr.working",
         log_level: "info",
         source: "manuale.pdf",
-        detail: "sha256=abc123",
+        detail: "document=1/2 page=3/15 elapsed=00:20 cpu=31.2% memory=2048MB",
       });
       return queuedJob;
     });
@@ -109,7 +109,8 @@ describe("App", () => {
     expect(await screen.findByText("2 documenti selezionati")).toBeInTheDocument();
     expect(screen.getByText("manuale.pdf · note.md")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveValue(0);
-    expect(screen.getByText(/source.acquired/)).toBeInTheDocument();
+    expect(screen.getAllByText("OCR attivo").length).toBeGreaterThan(0);
+    expect(screen.getByText(/pagina 3\/15/)).toBeInTheDocument();
     expect(client.startImport).toHaveBeenCalledWith(
       wiki.wiki_id,
       ["C:\\Synthetic\\manuale.pdf", "C:\\Synthetic\\note.md"],

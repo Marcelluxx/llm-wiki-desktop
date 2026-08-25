@@ -19,6 +19,8 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   const [logs, setLogs] = useState<JobLogEntry[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [currentActivity, setCurrentActivity] = useState<JobEvent | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
   const activeJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(job.state));
 
   useEffect(() => {
@@ -36,7 +38,15 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
       .catch(() => undefined);
   }, [client, wiki.wiki_id]);
 
+  useEffect(() => {
+    if (!activeJob) return undefined;
+    setClock(Date.now());
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeJob]);
+
   function applyEvent(event: JobEvent) {
+    setCurrentActivity(event);
     if (event.log_level) {
       const entry: JobLogEntry = {
         timestamp: new Date().toISOString(),
@@ -76,6 +86,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
       setSelectedNames(paths.map(fileName));
       setLogs([]);
       setLogsOpen(true);
+      setCurrentActivity(null);
       const job = await client.startImport(wiki.wiki_id, paths, applyEvent);
       setSelectedJobId(job.job_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
@@ -138,6 +149,23 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
               <span>{Math.round(activeJob.stage_progress * 100)}%</span>
             </div>
             <progress max="1" value={activeJob.stage_progress} />
+            <div className="activity-card">
+              <div>
+                <small>{messages.currentActivity}</small>
+                <strong>
+                  {currentActivity
+                    ? processingMessage(currentActivity.message, messages)
+                    : stageLabel(activeJob.state, messages)}
+                </strong>
+              </div>
+              <span>
+                {messages.elapsedTime}: {formatElapsed(activeJob.created_at, clock)}
+              </span>
+              {currentActivity?.source && <code>{currentActivity.source}</code>}
+              {currentActivity?.detail && (
+                <code>{formatActivityDetail(currentActivity.detail, messages)}</code>
+              )}
+            </div>
             <button type="button" className="secondary-button" onClick={cancelActiveJob}>
               {messages.cancelImport}
             </button>
@@ -180,7 +208,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
                         <time>{formatLogTime(entry.timestamp)}</time>
                         <span>{entry.level.toUpperCase()}</span>
                         <code>
-                          {entry.message}
+                          {processingMessage(entry.message, messages)}
                           {entry.source ? ` · ${entry.source}` : ""}
                           {entry.detail ? ` · ${entry.detail}` : ""}
                         </code>
@@ -200,6 +228,49 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
 function formatLogTime(timestamp: string): string {
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? "--:--:--" : date.toLocaleTimeString();
+}
+
+function formatElapsed(timestamp: string, now: number): string {
+  const startedAt = new Date(timestamp).getTime();
+  if (Number.isNaN(startedAt)) return "--:--";
+  const totalSeconds = Math.max(Math.floor((now - startedAt) / 1000), 0);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+    : `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatActivityDetail(detail: string, messages: Messages): string {
+  return detail
+    .replaceAll("document=", `${messages.pdfShort} `)
+    .replaceAll(" pages=", ` · ${messages.pagesShort} `)
+    .replaceAll(" page=", ` · ${messages.pageShort} `)
+    .replaceAll(" elapsed=", ` · ${messages.elapsedTime} `)
+    .replaceAll(" cpu=", ` · ${messages.cpuLabel} `)
+    .replaceAll(" memory=", ` · ${messages.ramLabel} `);
+}
+
+function processingMessage(message: string, messages: Messages): string {
+  const labels: Record<string, string> = {
+    "ocr.server_starting": messages.ocrStarting,
+    "ocr.server_ready": messages.ocrReady,
+    "ocr.document_started": messages.ocrDocumentStarted,
+    "ocr.page_started": messages.ocrPageStarted,
+    "ocr.page_completed": messages.ocrPageCompleted,
+    "ocr.working": messages.ocrWorking,
+    "ocr.models_downloading": messages.ocrModelsDownloading,
+    "ocr.model_downloaded": messages.ocrModelDownloaded,
+    "ocr.model_ready": messages.ocrModelReady,
+    "ocr.accelerator": messages.ocrAccelerator,
+    "ocr.backend_processing": messages.ocrBackendProcessing,
+    "ocr.backend_pages": messages.ocrBackendPages,
+    "ocr.backend_warning": messages.ocrBackendWarning,
+    "ocr.backend_error": messages.ocrBackendError,
+    "ocr.possible_stall": messages.ocrPossibleStall,
+  };
+  return labels[message] ?? message;
 }
 
 function fileName(path: string): string {

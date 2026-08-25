@@ -19,6 +19,12 @@ application console. The complete JSONL history is kept under
 `.llm-wiki/logs/<job-id>.jsonl`; OpenDataLoader backend output is kept beside it for
 PDF diagnostics.
 
+PDFs are processed sequentially and every page advances the progress bar. During a
+long page the activity panel reports elapsed time, OCR process CPU/RAM use, model
+downloads, and relevant backend messages. A low-activity watchdog warns after two
+minutes and a per-page safety timeout stops a genuinely stuck OCR process after 30
+minutes.
+
 ## Architecture
 
 - Tauri 2 + React/TypeScript desktop interface

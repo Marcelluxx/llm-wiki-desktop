@@ -19,6 +19,11 @@ from llm_wiki_engine.contracts import (
     SOURCE_FORMATS,
     IpcEnvelope,
 )
+from llm_wiki_engine.ingestion import (
+    classify_ocr_log_line,
+    ocr_progress,
+    read_ocr_log_entries,
+)
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 FIXTURES = REPOSITORY_ROOT / "tests" / "fixtures" / "contracts"
@@ -218,6 +223,40 @@ def test_worker_persists_a_visible_error_log(tmp_path: Path) -> None:
     assert "detail" in responses[-1]["payload"]
     log_content = (wiki_root / ".llm-wiki" / "logs" / "job-error.jsonl").read_text(encoding="utf-8")
     assert '"level":"error"' in log_content
+
+
+def test_ocr_monitor_classifies_useful_backend_activity() -> None:
+    assert classify_ocr_log_line("Downloading detection model, please wait") == (
+        "info",
+        "ocr.models_downloading",
+        "Downloading detection model, please wait",
+    )
+    assert classify_ocr_log_line("2026 INFO Accelerator device: 'cpu'") == (
+        "info",
+        "ocr.accelerator",
+        "2026 INFO Accelerator device: 'cpu'",
+    )
+    assert classify_ocr_log_line("HTTP Request: GET /health") is None
+
+
+def test_ocr_log_reader_waits_for_complete_lines(tmp_path: Path) -> None:
+    log_path = tmp_path / "ocr.log"
+    log_path.write_bytes(b"Downloading object-detection model")
+
+    offset, entries = read_ocr_log_entries(log_path, 0)
+    assert offset == 0
+    assert entries == []
+
+    with log_path.open("ab") as stream:
+        stream.write(b"\nAccelerator device: cpu\n")
+    offset, entries = read_ocr_log_entries(log_path, offset)
+
+    assert offset == log_path.stat().st_size
+    assert [entry[1] for entry in entries] == [
+        "ocr.models_downloading",
+        "ocr.accelerator",
+    ]
+    assert abs(ocr_progress(5, 10) - 0.8) < 1e-9
 
 
 def real_job_request(wiki_root: Path, job_id: str, sources: list[Path]) -> dict[str, object]:

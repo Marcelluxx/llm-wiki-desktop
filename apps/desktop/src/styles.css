@@ -464,6 +464,36 @@ label small,
   margin-bottom: 1.25rem;
 }
 
+.activity-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #c9d8d2;
+  border-radius: 0.8rem;
+  background: #f4f8f6;
+  text-align: left;
+}
+
+.activity-card div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.activity-card small,
+.activity-card span {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.activity-card code {
+  overflow-wrap: anywhere;
+  color: #314b44;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
 .job-progress__labels {
   display: flex;
   justify-content: space-between;

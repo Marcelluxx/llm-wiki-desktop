@@ -46,6 +46,9 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
 - Structured JSONL job logs are persisted inside each wiki, exposed in the wiki
   interface, and mirrored to the browser, Rust, and worker consoles. OCR backend
   output is retained as a separate diagnostic log.
+- PDF batches now run document-by-document and page-by-page, with truthful progress,
+  elapsed time, process-tree CPU/RAM metrics, live model/backend events, inactivity
+  warnings, cancellation, and a bounded per-page watchdog.
 
 ## Validation evidence
 

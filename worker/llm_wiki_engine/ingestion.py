@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -17,12 +18,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event
 
+import psutil  # type: ignore[import-untyped]
+import pypdfium2 as pdfium  # type: ignore[import-untyped]
 from docx import Document
 
 from .contracts import JobState
 
 EmitEvent = Callable[[JobState, float, str, str | None, str | None, str | None], None]
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt", ".md"}
+OCR_HEARTBEAT_SECONDS = 10.0
+OCR_STALL_WARNING_SECONDS = 120.0
+OCR_PAGE_TIMEOUT_SECONDS = 1800.0
 
 
 class IngestionCancelled(Exception):
@@ -228,6 +234,10 @@ class JobProcessor:
                 except OSError:
                     shutil.copyfile(source.raw_path, staged_path)
             staged_sources.append(staged_path)
+        page_counts = [pdf_page_count(path) for path in staged_sources]
+        total_pages = sum(page_counts)
+        if total_pages == 0:
+            raise ValueError("The selected PDFs contain no pages")
         port = available_local_port()
         server_log_path = self._logger.path.with_name(f"{self._job_id}-ocr-server.log")
         server_executable = Path(sys.executable).with_name("opendataloader-pdf-hybrid.exe")
@@ -267,61 +277,129 @@ class JobProcessor:
                     state=JobState.EXTRACTING,
                     progress=progress,
                 )
-                command = [
-                    str(client_executable),
-                    *[str(path) for path in staged_sources],
-                    "--output-dir",
-                    str(output_directory),
-                    "--format",
-                    "markdown,json",
-                    "--hybrid",
-                    "docling-fast",
-                    "--hybrid-url",
-                    f"http://127.0.0.1:{port}",
-                    "--hybrid-mode",
-                    "full",
-                ]
-                client = subprocess.Popen(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=server_log,
-                    stderr=subprocess.STDOUT,
-                    creationflags=hidden_process_flags(),
-                )
-                wait_for_process(client, self._cancellation)
-                if client.returncode != 0:
-                    raise RuntimeError(
-                        "OpenDataLoader exited with code "
-                        f"{client.returncode}; see {server_log_path.name}"
+                completed_pages = 0
+                for document_index, (source, staged_path, page_count) in enumerate(
+                    zip(sources, staged_sources, page_counts, strict=True), start=1
+                ):
+                    self._logger.write(
+                        "info",
+                        "ocr.document_started",
+                        state=JobState.EXTRACTING,
+                        progress=ocr_progress(completed_pages, total_pages),
+                        source=source.original_name,
+                        detail=f"document={document_index}/{len(sources)} pages={page_count}",
+                    )
+                    page_markdown: list[str] = []
+                    semantic_pages: list[object] = []
+                    for page_number in range(1, page_count + 1):
+                        self._check_cancelled()
+                        page_output = (
+                            output_directory / staged_path.stem / f"page-{page_number:04d}"
+                        )
+                        page_output.mkdir(parents=True, exist_ok=True)
+                        page_progress = ocr_progress(completed_pages, total_pages)
+                        self._logger.write(
+                            "info",
+                            "ocr.page_started",
+                            state=JobState.EXTRACTING,
+                            progress=page_progress,
+                            source=source.original_name,
+                            detail=(
+                                f"document={document_index}/{len(sources)} "
+                                f"page={page_number}/{page_count}"
+                            ),
+                        )
+                        log_offset = server_log_path.stat().st_size
+                        command = [
+                            str(client_executable),
+                            str(staged_path),
+                            "--pages",
+                            str(page_number),
+                            "--output-dir",
+                            str(page_output),
+                            "--format",
+                            "markdown,json",
+                            "--hybrid",
+                            "docling-fast",
+                            "--hybrid-url",
+                            f"http://127.0.0.1:{port}",
+                            "--hybrid-mode",
+                            "full",
+                        ]
+                        client = subprocess.Popen(
+                            command,
+                            stdin=subprocess.DEVNULL,
+                            stdout=server_log,
+                            stderr=subprocess.STDOUT,
+                            creationflags=hidden_process_flags(),
+                        )
+                        monitor_ocr_process(
+                            client=client,
+                            server=server,
+                            cancellation=self._cancellation,
+                            log_path=server_log_path,
+                            log_offset=log_offset,
+                            logger=self._logger,
+                            source=source.original_name,
+                            progress=page_progress,
+                            document_index=document_index,
+                            document_count=len(sources),
+                            page_number=page_number,
+                            page_count=page_count,
+                        )
+                        if client.returncode != 0:
+                            raise RuntimeError(
+                                "OpenDataLoader exited with code "
+                                f"{client.returncode}; see {server_log_path.name}"
+                            )
+                        markdown_path = find_pdf_output(page_output, staged_path.stem, ".md")
+                        if markdown_path is None:
+                            raise RuntimeError(
+                                "OpenDataLoader did not produce Markdown for "
+                                f"{source.original_name}, page {page_number}"
+                            )
+                        markdown = markdown_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).strip()
+                        if not markdown:
+                            raise RuntimeError(
+                                "OpenDataLoader produced empty Markdown for "
+                                f"{source.original_name}, page {page_number}"
+                            )
+                        page_markdown.append(f"<!-- page: {page_number} -->\n\n{markdown}")
+                        semantic_path = find_pdf_output(page_output, staged_path.stem, ".json")
+                        if semantic_path is not None:
+                            semantic_pages.append(
+                                json.loads(semantic_path.read_text(encoding="utf-8"))
+                            )
+                        completed_pages += 1
+                        self._logger.write(
+                            "info",
+                            "ocr.page_completed",
+                            state=JobState.EXTRACTING,
+                            progress=ocr_progress(completed_pages, total_pages),
+                            source=source.original_name,
+                            detail=(
+                                f"document={document_index}/{len(sources)} "
+                                f"page={page_number}/{page_count}"
+                            ),
+                        )
+                    self._write_artifacts(
+                        source,
+                        "\n\n---\n\n".join(page_markdown),
+                        "opendataloader-pdf-hybrid-force-ocr",
+                        semantic_json={"pages": semantic_pages} if semantic_pages else None,
+                    )
+                    self._logger.write(
+                        "info",
+                        "source.ocr_completed",
+                        state=JobState.EXTRACTING,
+                        progress=ocr_progress(completed_pages, total_pages),
+                        source=source.original_name,
+                        detail=f"document={document_index}/{len(sources)} pages={page_count}",
                     )
             finally:
                 terminate_process(server)
-
-        for source, staged_path in zip(sources, staged_sources, strict=True):
-            markdown_path = find_pdf_output(output_directory, staged_path.stem, ".md")
-            if markdown_path is None:
-                raise RuntimeError(
-                    f"OpenDataLoader did not produce Markdown for {source.original_name}"
-                )
-            markdown = markdown_path.read_text(encoding="utf-8", errors="replace")
-            if not markdown.strip():
-                raise RuntimeError(
-                    f"OpenDataLoader produced empty Markdown for {source.original_name}"
-                )
-            semantic_json_path = find_pdf_output(output_directory, staged_path.stem, ".json")
-            self._write_artifacts(
-                source,
-                markdown,
-                "opendataloader-pdf-hybrid-force-ocr",
-                semantic_json_path=semantic_json_path,
-            )
-            self._logger.write(
-                "info",
-                "source.ocr_completed",
-                state=JobState.EXTRACTING,
-                progress=0.88,
-                source=source.original_name,
-            )
 
     def _write_artifacts(
         self,
@@ -329,13 +407,16 @@ class JobProcessor:
         markdown: str,
         extractor: str,
         *,
-        semantic_json_path: Path | None = None,
+        semantic_json: object | None = None,
     ) -> None:
         artifact_directory = self._wiki_root / ".llm-wiki" / "artifacts" / source.content_sha256
         artifact_directory.mkdir(parents=True, exist_ok=True)
         atomic_write_text(artifact_directory / "document.md", markdown)
-        if semantic_json_path is not None:
-            atomic_copy_file(semantic_json_path, artifact_directory / "semantic.json")
+        if semantic_json is not None:
+            atomic_write_text(
+                artifact_directory / "semantic.json",
+                json.dumps(semantic_json, ensure_ascii=False, indent=2) + "\n",
+            )
         manifest = {
             "schema_version": "1.0",
             "source_id": source.source_id,
@@ -344,7 +425,7 @@ class JobProcessor:
             "content_sha256": source.content_sha256,
             "byte_size": source.byte_size,
             "extractor": extractor,
-            "semantic_json": semantic_json_path is not None,
+            "semantic_json": semantic_json is not None,
         }
         atomic_write_text(
             artifact_directory / "manifest.json",
@@ -444,6 +525,200 @@ def available_local_port() -> int:
         return int(listener.getsockname()[1])
 
 
+def pdf_page_count(path: Path) -> int:
+    document = pdfium.PdfDocument(str(path))
+    try:
+        return len(document)
+    finally:
+        document.close()
+
+
+def ocr_progress(completed_pages: int, total_pages: int) -> float:
+    return 0.72 + (0.16 * completed_pages / max(total_pages, 1))
+
+
+@dataclass(frozen=True, slots=True)
+class OcrMetrics:
+    cpu_percent: float
+    memory_mb: float
+
+
+class ProcessTreeSampler:
+    def __init__(self, root_process_ids: list[int]) -> None:
+        self._root_process_ids = root_process_ids
+        self._previous_cpu: dict[int, float] = {}
+        self._previous_time = time.monotonic()
+
+    def sample(self) -> OcrMetrics:
+        processes: dict[int, psutil.Process] = {}
+        for process_id in self._root_process_ids:
+            try:
+                root = psutil.Process(process_id)
+                processes[root.pid] = root
+                processes.update({child.pid: child for child in root.children(recursive=True)})
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        current_cpu: dict[int, float] = {}
+        memory_bytes = 0
+        for process_id, process in processes.items():
+            try:
+                times = process.cpu_times()
+                current_cpu[process_id] = float(times.user + times.system)
+                memory_bytes += process.memory_info().rss
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        now = time.monotonic()
+        elapsed = max(now - self._previous_time, 0.001)
+        cpu_delta = sum(
+            max(value - self._previous_cpu.get(process_id, value), 0.0)
+            for process_id, value in current_cpu.items()
+        )
+        logical_cpus = psutil.cpu_count() or 1
+        cpu_percent = min((cpu_delta / elapsed / logical_cpus) * 100.0, 100.0)
+        self._previous_cpu = current_cpu
+        self._previous_time = now
+        return OcrMetrics(cpu_percent=cpu_percent, memory_mb=memory_bytes / 1024 / 1024)
+
+
+def monitor_ocr_process(
+    *,
+    client: subprocess.Popen[bytes],
+    server: subprocess.Popen[bytes],
+    cancellation: Event,
+    log_path: Path,
+    log_offset: int,
+    logger: JobLogger,
+    source: str,
+    progress: float,
+    document_index: int,
+    document_count: int,
+    page_number: int,
+    page_count: int,
+) -> None:
+    started_at = time.monotonic()
+    last_activity_at = started_at
+    last_heartbeat_at = started_at
+    last_warning_at = 0.0
+    sampler = ProcessTreeSampler([client.pid, server.pid])
+    sampler.sample()
+    current_offset = log_offset
+
+    while client.poll() is None:
+        if cancellation.wait(0.25):
+            terminate_process(client)
+            raise IngestionCancelled
+        current_offset, entries = read_ocr_log_entries(log_path, current_offset)
+        now = time.monotonic()
+        if entries:
+            last_activity_at = now
+        for level, message, detail in entries:
+            logger.write(
+                level,
+                message,
+                state=JobState.EXTRACTING,
+                progress=progress,
+                source=source,
+                detail=detail,
+            )
+        if now - last_heartbeat_at >= OCR_HEARTBEAT_SECONDS:
+            metrics = sampler.sample()
+            if metrics.cpu_percent >= 0.5:
+                last_activity_at = now
+            elapsed_seconds = int(now - started_at)
+            logger.write(
+                "info",
+                "ocr.working",
+                state=JobState.EXTRACTING,
+                progress=progress,
+                source=source,
+                detail=(
+                    f"document={document_index}/{document_count} page={page_number}/{page_count} "
+                    f"elapsed={format_duration(elapsed_seconds)} "
+                    f"cpu={metrics.cpu_percent:.1f}% memory={metrics.memory_mb:.0f}MB"
+                ),
+            )
+            last_heartbeat_at = now
+        inactive_seconds = now - last_activity_at
+        if (
+            inactive_seconds >= OCR_STALL_WARNING_SECONDS
+            and now - last_warning_at >= OCR_STALL_WARNING_SECONDS
+        ):
+            logger.write(
+                "warning",
+                "ocr.possible_stall",
+                state=JobState.EXTRACTING,
+                progress=progress,
+                source=source,
+                detail=f"no_activity={format_duration(int(inactive_seconds))}",
+            )
+            last_warning_at = now
+        if now - started_at >= OCR_PAGE_TIMEOUT_SECONDS:
+            terminate_process(client)
+            raise TimeoutError(
+                f"OCR exceeded 30 minutes on {source}, page {page_number}/{page_count}"
+            )
+
+    _, entries = read_ocr_log_entries(log_path, current_offset)
+    for level, message, detail in entries:
+        logger.write(
+            level,
+            message,
+            state=JobState.EXTRACTING,
+            progress=progress,
+            source=source,
+            detail=detail,
+        )
+
+
+def read_ocr_log_entries(path: Path, offset: int) -> tuple[int, list[tuple[str, str, str]]]:
+    if not path.is_file():
+        return offset, []
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        content = stream.read()
+    last_line_break = content.rfind(b"\n")
+    if last_line_break < 0:
+        return offset, []
+    complete = content[: last_line_break + 1]
+    new_offset = offset + len(complete)
+    entries = [
+        entry
+        for line in complete.decode("utf-8", errors="replace").splitlines()
+        if (entry := classify_ocr_log_line(line)) is not None
+    ]
+    return new_offset, entries
+
+
+def classify_ocr_log_line(line: str) -> tuple[str, str, str] | None:
+    compact = " ".join(line.strip().split())
+    if not compact:
+        return None
+    lowered = compact.lower()
+    detail = compact[-500:]
+    if "downloading" in lowered and "model" in lowered:
+        return "info", "ocr.models_downloading", detail
+    if "download complete" in lowered:
+        return "info", "ocr.model_downloaded", detail
+    if "engine ready" in lowered or "pipeline initialized" in lowered:
+        return "info", "ocr.model_ready", detail
+    if "accelerator device" in lowered:
+        return "info", "ocr.accelerator", detail
+    if re.search(r"processing document\b", lowered):
+        return "info", "ocr.backend_processing", detail
+    if "starting hybrid processing for" in lowered or "pages via docling-fast" in lowered:
+        return "info", "ocr.backend_pages", detail
+    if "warning" in lowered and "pin_memory" not in lowered:
+        return "warning", "ocr.backend_warning", detail
+    if "error" in lowered or "traceback" in lowered:
+        return "error", "ocr.backend_error", detail
+    return None
+
+
+def format_duration(seconds: int) -> str:
+    minutes, remaining_seconds = divmod(max(seconds, 0), 60)
+    return f"{minutes:02d}:{remaining_seconds:02d}"
+
+
 def wait_for_server(
     process: subprocess.Popen[bytes], port: int, cancellation: Event, *, timeout_seconds: int
 ) -> None:
@@ -460,13 +735,6 @@ def wait_for_server(
                 return
         time.sleep(0.25)
     raise TimeoutError("OpenDataLoader OCR server did not become ready within 5 minutes")
-
-
-def wait_for_process(process: subprocess.Popen[bytes], cancellation: Event) -> None:
-    while process.poll() is None:
-        if cancellation.wait(0.2):
-            terminate_process(process)
-            raise IngestionCancelled
 
 
 def terminate_process(process: subprocess.Popen[bytes]) -> None:
@@ -510,13 +778,6 @@ def atomic_write_text(path: Path, content: str) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     temporary.write_text(content, encoding="utf-8", newline="\n")
     os.replace(temporary, path)
-
-
-def atomic_copy_file(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
-    shutil.copyfile(source, temporary)
-    os.replace(temporary, destination)
 
 
 def hidden_process_flags() -> int:

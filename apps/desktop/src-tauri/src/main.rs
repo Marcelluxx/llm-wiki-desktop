@@ -754,10 +754,17 @@ fn unavailable_error() -> CommandError {
 }
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        eprintln!("[LLM Wiki] Panic occurred: {info}");
+    }));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let application_data = app.path().app_local_data_dir()?;
+            let application_data = app.path().app_local_data_dir().map_err(|err| {
+                eprintln!("[LLM Wiki] Failed to get app_local_data_dir: {err}");
+                err
+            })?;
             let user_profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
             let installation_directory = std::env::current_exe()
                 .ok()
@@ -775,6 +782,7 @@ fn main() {
                 registry: Mutex::new(registry),
                 active_jobs: Arc::new(Mutex::new(HashMap::new())),
             });
+            println!("[LLM Wiki] Setup completed successfully");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

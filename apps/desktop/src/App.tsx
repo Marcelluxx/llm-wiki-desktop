@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LanguageSetup } from "./components/LanguageSetup";
+import { ProviderCommandCenter } from "./components/ProviderCommandCenter";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { WikiDashboard } from "./components/WikiDashboard";
 import { WikiForm } from "./components/WikiForm";
 import { WikiHome } from "./components/WikiHome";
-import type { PerformanceStatus, RegistrySnapshot, WikiRegistration } from "./contracts";
+import type {
+  PerformanceStatus,
+  ProviderSummary,
+  RegistrySnapshot,
+  WikiRegistration,
+} from "./contracts";
 import { formatAppError, getMessages, type Language } from "./i18n";
 import { registryClient, type RegistryClient, type WikiInput } from "./services/registry";
 
@@ -19,6 +25,8 @@ export function App({ client = registryClient }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [performance, setPerformance] = useState<PerformanceStatus | null>(null);
+  const [providers, setProviders] = useState<ProviderSummary[]>([]);
+  const [providerCenterOpen, setProviderCenterOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -39,6 +47,18 @@ export function App({ client = registryClient }: AppProps) {
       .then(setPerformance)
       .catch(() => undefined);
   }, [client]);
+
+  const loadProviders = useCallback(async () => {
+    try {
+      setProviders(await client.listProviderStatuses());
+    } catch {
+      setProviders([]);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void loadProviders();
+  }, [loadProviders]);
 
   const language: Language = snapshot?.interface_language ?? "it";
   const messages = useMemo(() => getMessages(language), [language]);
@@ -141,6 +161,10 @@ export function App({ client = registryClient }: AppProps) {
           onRegister={() => setFormMode("register")}
           onOpen={openWiki}
           onSettings={() => setSettingsOpen(true)}
+          provider={
+            providers.find((provider) => provider.status === "connected") ?? providers[0] ?? null
+          }
+          onProvider={() => setProviderCenterOpen(true)}
         />
       )}
 
@@ -170,6 +194,14 @@ export function App({ client = registryClient }: AppProps) {
           onRename={currentWiki ? renameCurrent : undefined}
           onRemove={currentWiki ? removeCurrent : undefined}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {providerCenterOpen && (
+        <ProviderCommandCenter
+          providers={providers}
+          messages={messages}
+          onRefresh={loadProviders}
+          onClose={() => setProviderCenterOpen(false)}
         />
       )}
     </div>

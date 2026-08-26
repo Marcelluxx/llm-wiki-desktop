@@ -53,6 +53,7 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
       cuda_enabled: false,
       device_name: null,
     }),
+    listProviderStatuses: vi.fn().mockResolvedValue([]),
     installNvidiaAcceleration: vi.fn(),
     pickFolder: vi.fn().mockResolvedValue(null),
     pickDocuments: vi.fn().mockResolvedValue([]),
@@ -87,6 +88,35 @@ describe("App", () => {
 
     expect(await screen.findByText("Questa wiki è pronta")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ricerca personale" })).toBeInTheDocument();
+  });
+
+  it("shows the provider badge and opens the provider command center", async () => {
+    const client = fakeClient(snapshot([wiki]));
+    vi.mocked(client.listProviderStatuses).mockResolvedValue([
+      {
+        provider_id: "codex",
+        display_name: "Codex",
+        transport: "cli",
+        status: "connected",
+        version: "codex 1.0",
+        capabilities: ["login", "models"],
+      },
+      {
+        provider_id: "claude",
+        display_name: "Claude",
+        transport: "cli",
+        status: "not_installed",
+        capabilities: ["install", "login"],
+      },
+    ]);
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Codex.*Collegato/ }));
+
+    expect(await screen.findByRole("dialog", { name: "Provider AI" })).toBeInTheDocument();
+    expect(screen.getByText("Claude")).toBeInTheDocument();
+    expect(screen.getByText("Da installare")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Installa" })).toBeEnabled();
   });
 
   it("selects supported documents and starts a visible import", async () => {

@@ -19,6 +19,8 @@ use tokio::{
 };
 use uuid::Uuid;
 
+mod providers;
+
 struct AppState {
     registry: Mutex<RegistryStore>,
     active_jobs: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
@@ -181,6 +183,13 @@ fn get_wiki_settings(
 #[tauri::command]
 fn get_performance_status() -> PerformanceStatus {
     performance_status()
+}
+
+#[tauri::command]
+async fn list_provider_statuses() -> Vec<llm_wiki_app_core::ProviderSummary> {
+    tauri::async_runtime::spawn_blocking(providers::detect_all)
+        .await
+        .unwrap_or_else(|_| providers::detect_all())
 }
 
 #[tauri::command]
@@ -795,6 +804,7 @@ fn main() {
             remove_wiki_registration,
             get_wiki_settings,
             get_performance_status,
+            list_provider_statuses,
             install_nvidia_acceleration,
             list_jobs,
             start_import,

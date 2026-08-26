@@ -1,5 +1,6 @@
-import type { WikiRegistration } from "../contracts";
+import type { ProviderSummary, WikiRegistration } from "../contracts";
 import type { Messages } from "../i18n";
+import { ProviderBadge } from "./ProviderBadge";
 
 interface WikiDashboardProps {
   messages: Messages;
@@ -8,6 +9,8 @@ interface WikiDashboardProps {
   onRegister(): void;
   onOpen(wiki: WikiRegistration): void;
   onSettings(): void;
+  provider: ProviderSummary | null;
+  onProvider(): void;
 }
 
 export function WikiDashboard({
@@ -17,6 +20,8 @@ export function WikiDashboard({
   onRegister,
   onOpen,
   onSettings,
+  provider,
+  onProvider,
 }: WikiDashboardProps) {
   return (
     <main className="app-main" id="main-content">
@@ -26,10 +31,13 @@ export function WikiDashboard({
           <h1>{messages.yourWikis}</h1>
           <p className="muted">{messages.dashboardHint}</p>
         </div>
-        <button type="button" className="icon-button" onClick={onSettings}>
-          <span aria-hidden="true">⚙</span>
-          <span className="sr-only">{messages.settings}</span>
-        </button>
+        <div className="dashboard-header-actions">
+          <ProviderBadge provider={provider} messages={messages} onClick={onProvider} />
+          <button type="button" className="icon-button" onClick={onSettings}>
+            <span aria-hidden="true">⚙</span>
+            <span className="sr-only">{messages.settings}</span>
+          </button>
+        </div>
       </header>
 
       <div className="primary-actions">

@@ -25,6 +25,7 @@ build/
 # Local toolchains and caches
 .tools/
 .cache/
+.superpowers/
 
 # IDE and OS
 .idea/

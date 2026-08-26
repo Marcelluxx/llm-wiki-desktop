@@ -5,6 +5,7 @@ import type {
   JobLogEntry,
   JobSummary,
   PerformanceStatus,
+  ProviderSummary,
   RegistrySnapshot,
   WikiRegistration,
   WikiSettings,
@@ -27,6 +28,7 @@ export interface RegistryClient {
   removeRegistration(wikiId: string): Promise<RegistrySnapshot>;
   getWikiSettings(wikiId: string): Promise<WikiSettings>;
   getPerformanceStatus(): Promise<PerformanceStatus>;
+  listProviderStatuses(): Promise<ProviderSummary[]>;
   installNvidiaAcceleration(): Promise<PerformanceStatus>;
   pickFolder(): Promise<string | null>;
   pickDocuments(): Promise<string[]>;
@@ -142,6 +144,10 @@ export const registryClient: RegistryClient = {
     if (isTauri()) return invoke("get_performance_status");
     return { nvidia_present: false, cuda_enabled: false, device_name: null };
   },
+  async listProviderStatuses() {
+    if (isTauri()) return invoke("list_provider_statuses");
+    return previewProviders();
+  },
   async installNvidiaAcceleration() {
     if (isTauri()) return invoke("install_nvidia_acceleration");
     throw new Error("NVIDIA acceleration is available only in the Windows app");
@@ -203,3 +209,45 @@ export const registryClient: RegistryClient = {
     return [];
   },
 };
+
+function previewProviders(): ProviderSummary[] {
+  return [
+    {
+      provider_id: "codex",
+      display_name: "Codex",
+      transport: "cli",
+      status: "connected",
+      version: "codex preview",
+      selected_model: "gpt-5",
+      capabilities: ["install", "login", "models", "structured_output"],
+    },
+    {
+      provider_id: "claude",
+      display_name: "Claude",
+      transport: "cli",
+      status: "not_installed",
+      capabilities: ["install", "login", "models", "structured_output"],
+    },
+    {
+      provider_id: "antigravity",
+      display_name: "Antigravity",
+      transport: "cli",
+      status: "auth_required",
+      capabilities: ["install", "login", "models", "structured_output"],
+    },
+    {
+      provider_id: "openrouter",
+      display_name: "OpenRouter",
+      transport: "cloud_api",
+      status: "key_required",
+      capabilities: ["credentials", "models", "structured_output"],
+    },
+    {
+      provider_id: "ollama",
+      display_name: "Ollama",
+      transport: "local_http",
+      status: "installed_offline",
+      capabilities: ["install", "models", "model_pull", "structured_output"],
+    },
+  ];
+}

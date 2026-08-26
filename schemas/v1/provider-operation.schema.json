@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-wiki.local/schemas/v1/provider-operation.schema.json",
+  "title": "Provider operation event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation_id", "provider_id", "state", "message"],
+  "properties": {
+    "operation_id": { "type": "string", "minLength": 1 },
+    "provider_id": {
+      "enum": ["codex", "claude", "antigravity", "openrouter", "ollama", "fake"]
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "detecting",
+        "awaiting_confirmation",
+        "downloading",
+        "verifying",
+        "installing",
+        "authenticating",
+        "validating",
+        "completed",
+        "cancelled",
+        "failed",
+        "action_required"
+      ]
+    },
+    "message": { "type": "string", "minLength": 1 },
+    "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "bytes_downloaded": { "type": "integer", "minimum": 0 },
+    "bytes_total": { "type": "integer", "minimum": 0 },
+    "bytes_per_second": { "type": "integer", "minimum": 0 },
+    "eta_seconds": { "type": "integer", "minimum": 0 },
+    "elapsed_seconds": { "type": "integer", "minimum": 0 },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "component": { "type": "string" },
+    "source_host": { "type": "string" },
+    "detail": { "type": "string" },
+    "log_level": { "enum": ["info", "warning", "error"] },
+    "error_code": { "type": "string" }
+  }
+}

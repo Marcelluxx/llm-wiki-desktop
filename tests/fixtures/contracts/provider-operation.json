@@ -1,0 +1,17 @@
+{
+  "operation_id": "provider-operation-demo",
+  "provider_id": "claude",
+  "state": "downloading",
+  "message": "provider.download.progress",
+  "progress": 0.64,
+  "bytes_downloaded": 40265318,
+  "bytes_total": 62914560,
+  "bytes_per_second": 8598323,
+  "eta_seconds": 3,
+  "elapsed_seconds": 6,
+  "attempt": 1,
+  "component": "Node.js private runtime",
+  "source_host": "nodejs.org",
+  "detail": "checksum=pending",
+  "log_level": "info"
+}

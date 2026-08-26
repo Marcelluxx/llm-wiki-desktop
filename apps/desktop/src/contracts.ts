@@ -24,7 +24,40 @@ export const ERROR_CATEGORIES = [
   "internal",
 ] as const;
 export const REVIEW_SEVERITIES = ["info", "warning", "error"] as const;
-export const PROVIDER_IDS = ["codex", "claude", "antigravity", "fake"] as const;
+export const PROVIDER_IDS = [
+  "codex",
+  "claude",
+  "antigravity",
+  "openrouter",
+  "ollama",
+  "fake",
+] as const;
+export const PROVIDER_TRANSPORTS = ["cli", "cloud_api", "local_http"] as const;
+export const PROVIDER_STATUSES = [
+  "checking",
+  "connected",
+  "not_installed",
+  "auth_required",
+  "key_required",
+  "installed_offline",
+  "update_required",
+  "action_required",
+  "unavailable",
+] as const;
+export const PROVIDER_OPERATION_STATES = [
+  "queued",
+  "detecting",
+  "awaiting_confirmation",
+  "downloading",
+  "verifying",
+  "installing",
+  "authenticating",
+  "validating",
+  "completed",
+  "cancelled",
+  "failed",
+  "action_required",
+] as const;
 export const INGEST_STRATEGIES = ["forced_layout_ocr", "direct_text", "structured_docx"] as const;
 
 export type MessageType = (typeof MESSAGE_TYPES)[number];
@@ -33,6 +66,9 @@ export type SourceFormat = (typeof SOURCE_FORMATS)[number];
 export type ErrorCategory = (typeof ERROR_CATEGORIES)[number];
 export type ReviewSeverity = (typeof REVIEW_SEVERITIES)[number];
 export type ProviderId = (typeof PROVIDER_IDS)[number];
+export type ProviderTransport = (typeof PROVIDER_TRANSPORTS)[number];
+export type ProviderStatus = (typeof PROVIDER_STATUSES)[number];
+export type ProviderOperationState = (typeof PROVIDER_OPERATION_STATES)[number];
 export type IngestStrategy = (typeof INGEST_STRATEGIES)[number];
 
 export interface IpcEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> {
@@ -66,8 +102,47 @@ export interface WikiSettings {
   output_root: string;
   note_language: string;
   provider_id: ProviderId;
+  model_id?: string;
+  use_global_provider?: boolean;
   ocr_language: string;
   open_in_obsidian_after_publish?: boolean;
+}
+
+export interface ProviderModel {
+  model_id: string;
+  display_name: string;
+  size_bytes?: number;
+  local: boolean;
+}
+
+export interface ProviderSummary {
+  provider_id: ProviderId;
+  display_name: string;
+  transport: ProviderTransport;
+  status: ProviderStatus;
+  version?: string;
+  selected_model?: string;
+  detail?: string;
+  capabilities: string[];
+}
+
+export interface ProviderOperationEvent {
+  operation_id: string;
+  provider_id: ProviderId;
+  state: ProviderOperationState;
+  message: string;
+  progress?: number;
+  bytes_downloaded?: number;
+  bytes_total?: number;
+  bytes_per_second?: number;
+  eta_seconds?: number;
+  elapsed_seconds?: number;
+  attempt?: number;
+  component?: string;
+  source_host?: string;
+  detail?: string;
+  log_level?: string;
+  error_code?: string;
 }
 
 export interface PerformanceStatus {

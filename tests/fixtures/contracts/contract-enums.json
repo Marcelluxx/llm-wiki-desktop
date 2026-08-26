@@ -23,6 +23,32 @@
     "internal"
   ],
   "review_severities": ["info", "warning", "error"],
-  "provider_ids": ["codex", "claude", "antigravity", "fake"],
+  "provider_ids": ["codex", "claude", "antigravity", "openrouter", "ollama", "fake"],
+  "provider_transports": ["cli", "cloud_api", "local_http"],
+  "provider_statuses": [
+    "checking",
+    "connected",
+    "not_installed",
+    "auth_required",
+    "key_required",
+    "installed_offline",
+    "update_required",
+    "action_required",
+    "unavailable"
+  ],
+  "provider_operation_states": [
+    "queued",
+    "detecting",
+    "awaiting_confirmation",
+    "downloading",
+    "verifying",
+    "installing",
+    "authenticating",
+    "validating",
+    "completed",
+    "cancelled",
+    "failed",
+    "action_required"
+  ],
   "ingest_strategies": ["forced_layout_ocr", "direct_text", "structured_docx"]
 }

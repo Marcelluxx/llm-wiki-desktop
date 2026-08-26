@@ -17,6 +17,9 @@ import {
   MESSAGE_TYPES,
   type PublicationResult,
   PROVIDER_IDS,
+  PROVIDER_OPERATION_STATES,
+  PROVIDER_STATUSES,
+  PROVIDER_TRANSPORTS,
   type ReviewItem,
   REVIEW_SEVERITIES,
   type SourceManifestEntry,
@@ -34,6 +37,9 @@ describe("shared contracts", () => {
     expect(ERROR_CATEGORIES).toEqual(enumFixture.error_categories);
     expect(REVIEW_SEVERITIES).toEqual(enumFixture.review_severities);
     expect(PROVIDER_IDS).toEqual(enumFixture.provider_ids);
+    expect(PROVIDER_TRANSPORTS).toEqual(enumFixture.provider_transports);
+    expect(PROVIDER_STATUSES).toEqual(enumFixture.provider_statuses);
+    expect(PROVIDER_OPERATION_STATES).toEqual(enumFixture.provider_operation_states);
     expect(INGEST_STRATEGIES).toEqual(enumFixture.ingest_strategies);
   });
 

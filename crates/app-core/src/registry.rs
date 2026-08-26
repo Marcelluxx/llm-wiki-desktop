@@ -337,6 +337,8 @@ fn create_wiki_skeleton(
             output_root: display_path(root),
             note_language: note_language.to_owned(),
             provider_id: ProviderId::Fake,
+            model_id: None,
+            use_global_provider: false,
             ocr_language: "ita+eng".to_owned(),
             open_in_obsidian_after_publish: false,
         };

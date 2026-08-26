@@ -18,6 +18,9 @@ from llm_wiki_engine.contracts import (
     REVIEW_SEVERITIES,
     SOURCE_FORMATS,
     IpcEnvelope,
+    ProviderOperationState,
+    ProviderStatus,
+    ProviderTransport,
 )
 from llm_wiki_engine.ingestion import (
     build_pdf_batch_command,
@@ -45,6 +48,9 @@ def test_python_enums_match_language_neutral_fixture() -> None:
     assert values["error_categories"] == list(ERROR_CATEGORIES)
     assert values["review_severities"] == list(REVIEW_SEVERITIES)
     assert values["provider_ids"] == list(PROVIDER_IDS)
+    assert values["provider_transports"] == list(ProviderTransport)
+    assert values["provider_statuses"] == list(ProviderStatus)
+    assert values["provider_operation_states"] == list(ProviderOperationState)
     assert values["ingest_strategies"] == list(INGEST_STRATEGIES)
 
 

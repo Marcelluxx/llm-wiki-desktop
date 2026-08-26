@@ -4,6 +4,7 @@
   "output_root": "C:\\Synthetic\\WikiDemo",
   "note_language": "it",
   "provider_id": "fake",
+  "use_global_provider": false,
   "ocr_language": "ita+eng",
   "open_in_obsidian_after_publish": false
 }

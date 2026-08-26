@@ -2,7 +2,8 @@ use std::{fs, path::PathBuf};
 
 use llm_wiki_app_core::contracts::{
     ERROR_CATEGORIES, INGEST_STRATEGIES, JOB_STATES, MESSAGE_TYPES, PROVIDER_IDS,
-    REVIEW_SEVERITIES, SOURCE_FORMATS,
+    PROVIDER_OPERATION_STATES, PROVIDER_STATUSES, PROVIDER_TRANSPORTS, REVIEW_SEVERITIES,
+    SOURCE_FORMATS,
 };
 use llm_wiki_app_core::{
     ExtractionArtifact, IpcEnvelope, JobRecord, PublicationResult, ReviewItem, SourceManifestEntry,
@@ -71,6 +72,18 @@ fn enum_values_match_the_language_neutral_fixture() {
         serde_json::json!(REVIEW_SEVERITIES)
     );
     assert_eq!(values["provider_ids"], serde_json::json!(PROVIDER_IDS));
+    assert_eq!(
+        values["provider_transports"],
+        serde_json::json!(PROVIDER_TRANSPORTS)
+    );
+    assert_eq!(
+        values["provider_statuses"],
+        serde_json::json!(PROVIDER_STATUSES)
+    );
+    assert_eq!(
+        values["provider_operation_states"],
+        serde_json::json!(PROVIDER_OPERATION_STATES)
+    );
     assert_eq!(
         values["ingest_strategies"],
         serde_json::json!(INGEST_STRATEGIES)

@@ -27,7 +27,40 @@ pub const ERROR_CATEGORIES: &[&str] = &[
     "internal",
 ];
 pub const REVIEW_SEVERITIES: &[&str] = &["info", "warning", "error"];
-pub const PROVIDER_IDS: &[&str] = &["codex", "claude", "antigravity", "fake"];
+pub const PROVIDER_IDS: &[&str] = &[
+    "codex",
+    "claude",
+    "antigravity",
+    "openrouter",
+    "ollama",
+    "fake",
+];
+pub const PROVIDER_TRANSPORTS: &[&str] = &["cli", "cloud_api", "local_http"];
+pub const PROVIDER_STATUSES: &[&str] = &[
+    "checking",
+    "connected",
+    "not_installed",
+    "auth_required",
+    "key_required",
+    "installed_offline",
+    "update_required",
+    "action_required",
+    "unavailable",
+];
+pub const PROVIDER_OPERATION_STATES: &[&str] = &[
+    "queued",
+    "detecting",
+    "awaiting_confirmation",
+    "downloading",
+    "verifying",
+    "installing",
+    "authenticating",
+    "validating",
+    "completed",
+    "cancelled",
+    "failed",
+    "action_required",
+];
 pub const INGEST_STRATEGIES: &[&str] = &["forced_layout_ocr", "direct_text", "structured_docx"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,7 +122,48 @@ pub enum ProviderId {
     Codex,
     Claude,
     Antigravity,
+    Openrouter,
+    Ollama,
     Fake,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderTransport {
+    Cli,
+    CloudApi,
+    LocalHttp,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderStatus {
+    Checking,
+    Connected,
+    NotInstalled,
+    AuthRequired,
+    KeyRequired,
+    InstalledOffline,
+    UpdateRequired,
+    ActionRequired,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderOperationState {
+    Queued,
+    Detecting,
+    AwaitingConfirmation,
+    Downloading,
+    Verifying,
+    Installing,
+    Authenticating,
+    Validating,
+    Completed,
+    Cancelled,
+    Failed,
+    ActionRequired,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,9 +207,72 @@ pub struct WikiSettings {
     pub output_root: String,
     pub note_language: String,
     pub provider_id: ProviderId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default)]
+    pub use_global_provider: bool,
     pub ocr_language: String,
     #[serde(default)]
     pub open_in_obsidian_after_publish: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderModel {
+    pub model_id: String,
+    pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    pub local: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderSummary {
+    pub provider_id: ProviderId,
+    pub display_name: String,
+    pub transport: ProviderTransport,
+    pub status: ProviderStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderOperationEvent {
+    pub operation_id: String,
+    pub provider_id: ProviderId,
+    pub state: ProviderOperationState,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_downloaded: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_total: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_per_second: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

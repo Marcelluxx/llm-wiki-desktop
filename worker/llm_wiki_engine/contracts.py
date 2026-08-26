@@ -56,7 +56,42 @@ class ProviderId(StrEnum):
     CODEX = "codex"
     CLAUDE = "claude"
     ANTIGRAVITY = "antigravity"
+    OPENROUTER = "openrouter"
+    OLLAMA = "ollama"
     FAKE = "fake"
+
+
+class ProviderTransport(StrEnum):
+    CLI = "cli"
+    CLOUD_API = "cloud_api"
+    LOCAL_HTTP = "local_http"
+
+
+class ProviderStatus(StrEnum):
+    CHECKING = "checking"
+    CONNECTED = "connected"
+    NOT_INSTALLED = "not_installed"
+    AUTH_REQUIRED = "auth_required"
+    KEY_REQUIRED = "key_required"
+    INSTALLED_OFFLINE = "installed_offline"
+    UPDATE_REQUIRED = "update_required"
+    ACTION_REQUIRED = "action_required"
+    UNAVAILABLE = "unavailable"
+
+
+class ProviderOperationState(StrEnum):
+    QUEUED = "queued"
+    DETECTING = "detecting"
+    AWAITING_CONFIRMATION = "awaiting_confirmation"
+    DOWNLOADING = "downloading"
+    VERIFYING = "verifying"
+    INSTALLING = "installing"
+    AUTHENTICATING = "authenticating"
+    VALIDATING = "validating"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+    ACTION_REQUIRED = "action_required"
 
 
 class IngestStrategy(StrEnum):
@@ -113,8 +148,47 @@ class WikiSettings(TypedDict):
     output_root: str
     note_language: str
     provider_id: ProviderId
+    model_id: NotRequired[str]
+    use_global_provider: NotRequired[bool]
     ocr_language: str
     open_in_obsidian_after_publish: NotRequired[bool]
+
+
+class ProviderModel(TypedDict):
+    model_id: str
+    display_name: str
+    size_bytes: NotRequired[int]
+    local: bool
+
+
+class ProviderSummary(TypedDict):
+    provider_id: ProviderId
+    display_name: str
+    transport: ProviderTransport
+    status: ProviderStatus
+    version: NotRequired[str]
+    selected_model: NotRequired[str]
+    detail: NotRequired[str]
+    capabilities: list[str]
+
+
+class ProviderOperationEvent(TypedDict):
+    operation_id: str
+    provider_id: ProviderId
+    state: ProviderOperationState
+    message: str
+    progress: NotRequired[float]
+    bytes_downloaded: NotRequired[int]
+    bytes_total: NotRequired[int]
+    bytes_per_second: NotRequired[int]
+    eta_seconds: NotRequired[int]
+    elapsed_seconds: NotRequired[int]
+    attempt: NotRequired[int]
+    component: NotRequired[str]
+    source_host: NotRequired[str]
+    detail: NotRequired[str]
+    log_level: NotRequired[str]
+    error_code: NotRequired[str]
 
 
 class JobCheckpoint(TypedDict):

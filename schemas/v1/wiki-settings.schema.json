@@ -17,7 +17,11 @@
     "wiki_id": { "type": "string", "minLength": 1 },
     "output_root": { "type": "string", "minLength": 3 },
     "note_language": { "type": "string", "minLength": 2 },
-    "provider_id": { "enum": ["codex", "claude", "antigravity", "fake"] },
+    "provider_id": {
+      "enum": ["codex", "claude", "antigravity", "openrouter", "ollama", "fake"]
+    },
+    "model_id": { "type": "string", "minLength": 1 },
+    "use_global_provider": { "type": "boolean", "default": false },
     "ocr_language": { "type": "string", "minLength": 2 },
     "open_in_obsidian_after_publish": { "type": "boolean", "default": false }
   }

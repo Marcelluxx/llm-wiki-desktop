@@ -48,6 +48,12 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
     renameWiki: vi.fn().mockResolvedValue(wiki),
     removeRegistration: vi.fn().mockResolvedValue(snapshot()),
     getWikiSettings: vi.fn(),
+    getPerformanceStatus: vi.fn().mockResolvedValue({
+      nvidia_present: false,
+      cuda_enabled: false,
+      device_name: null,
+    }),
+    installNvidiaAcceleration: vi.fn(),
     pickFolder: vi.fn().mockResolvedValue(null),
     pickDocuments: vi.fn().mockResolvedValue([]),
     listJobs: vi.fn().mockResolvedValue([]),
@@ -107,7 +113,9 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Aggiungi documenti" }));
 
     expect(await screen.findByText("2 documenti selezionati")).toBeInTheDocument();
-    expect(screen.getByText("manuale.pdf · note.md")).toBeInTheDocument();
+    expect(screen.getAllByText("manuale.pdf").length).toBeGreaterThan(0);
+    expect(screen.getByText("note.md")).toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveValue(0);
     expect(screen.getAllByText("OCR attivo").length).toBeGreaterThan(0);
     expect(screen.getByText(/pagina 3\/15/)).toBeInTheDocument();
@@ -116,6 +124,44 @@ describe("App", () => {
       ["C:\\Synthetic\\manuale.pdf", "C:\\Synthetic\\note.md"],
       expect.any(Function),
     );
+  });
+
+  it("stops an import immediately and allows another selection", async () => {
+    const client = fakeClient(snapshot([wiki]));
+    vi.mocked(client.listJobs).mockResolvedValue([queuedJob]);
+    vi.mocked(client.pickDocuments).mockResolvedValue(["C:\\Synthetic\\nuovo.pdf"]);
+    vi.mocked(client.startImport).mockResolvedValue({ ...queuedJob, job_id: "job-new" });
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Interrompi importazione" }));
+
+    await waitFor(() => expect(client.cancelJob).toHaveBeenCalledWith(queuedJob.job_id));
+    expect(screen.getByRole("button", { name: "Aggiungi documenti" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Aggiungi documenti" }));
+    await waitFor(() => expect(client.startImport).toHaveBeenCalled());
+  });
+
+  it("shows optional NVIDIA acceleration and enables it from settings", async () => {
+    const client = fakeClient(snapshot());
+    vi.mocked(client.getPerformanceStatus).mockResolvedValue({
+      nvidia_present: true,
+      cuda_enabled: false,
+      device_name: "NVIDIA Test GPU",
+    });
+    vi.mocked(client.installNvidiaAcceleration).mockResolvedValue({
+      nvidia_present: true,
+      cuda_enabled: true,
+      device_name: "NVIDIA Test GPU",
+    });
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Impostazioni" }));
+    expect(await screen.findByText("NVIDIA Test GPU")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Scarica e abilita CUDA" }));
+
+    await waitFor(() => expect(client.installNvidiaAcceleration).toHaveBeenCalledOnce());
+    expect(await screen.findByText("GPU attiva")).toBeInTheDocument();
   });
 
   it("moves keyboard focus into dialogs and closes them with Escape", async () => {

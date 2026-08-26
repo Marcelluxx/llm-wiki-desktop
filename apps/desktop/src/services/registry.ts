@@ -4,6 +4,7 @@ import type {
   JobEvent,
   JobLogEntry,
   JobSummary,
+  PerformanceStatus,
   RegistrySnapshot,
   WikiRegistration,
   WikiSettings,
@@ -25,6 +26,8 @@ export interface RegistryClient {
   renameWiki(wikiId: string, displayName: string): Promise<WikiRegistration>;
   removeRegistration(wikiId: string): Promise<RegistrySnapshot>;
   getWikiSettings(wikiId: string): Promise<WikiSettings>;
+  getPerformanceStatus(): Promise<PerformanceStatus>;
+  installNvidiaAcceleration(): Promise<PerformanceStatus>;
   pickFolder(): Promise<string | null>;
   pickDocuments(): Promise<string[]>;
   listJobs(wikiId: string): Promise<JobSummary[]>;
@@ -134,6 +137,14 @@ export const registryClient: RegistryClient = {
       ocr_language: "ita+eng",
       open_in_obsidian_after_publish: false,
     };
+  },
+  async getPerformanceStatus() {
+    if (isTauri()) return invoke("get_performance_status");
+    return { nvidia_present: false, cuda_enabled: false, device_name: null };
+  },
+  async installNvidiaAcceleration() {
+    if (isTauri()) return invoke("install_nvidia_acceleration");
+    throw new Error("NVIDIA acceleration is available only in the Windows app");
   },
   async pickFolder() {
     if (!isTauri()) return null;

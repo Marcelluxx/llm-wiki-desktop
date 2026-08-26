@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { WikiRegistration } from "../contracts";
+import type { PerformanceStatus, WikiRegistration } from "../contracts";
 import { formatAppError, type Language, type Messages } from "../i18n";
 import { useDialogFocus } from "../hooks/useDialogFocus";
 
@@ -7,6 +7,8 @@ interface SettingsPanelProps {
   language: Language;
   messages: Messages;
   wiki: WikiRegistration | null;
+  performance: PerformanceStatus | null;
+  onInstallAcceleration(): Promise<void>;
   onLanguage(language: Language): Promise<void>;
   onRename?(name: string): Promise<void>;
   onRemove?(): Promise<void>;
@@ -17,6 +19,8 @@ export function SettingsPanel({
   language,
   messages,
   wiki,
+  performance,
+  onInstallAcceleration,
   onLanguage,
   onRename,
   onRemove,
@@ -24,6 +28,7 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [name, setName] = useState(wiki?.display_name ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [installingAcceleration, setInstallingAcceleration] = useState(false);
   const { dialogRef, onKeyDown } = useDialogFocus(onClose);
 
   async function run(action: () => Promise<void>) {
@@ -73,6 +78,48 @@ export function SettingsPanel({
               <option value="en">English</option>
             </select>
           </label>
+        </div>
+
+        <div className="settings-section performance-settings">
+          <div className="settings-section__heading">
+            <strong>{messages.performance}</strong>
+            {performance?.cuda_enabled && (
+              <span className="status-badge status-badge--enabled">{messages.gpuEnabled}</span>
+            )}
+          </div>
+          {!performance ? (
+            <small>{messages.gpuChecking}</small>
+          ) : performance.cuda_enabled ? (
+            <div className="read-only-setting">
+              <span>{messages.gpuAcceleration}</span>
+              <strong>{messages.active}</strong>
+              {performance.device_name && <small>{performance.device_name}</small>}
+            </div>
+          ) : performance.nvidia_present ? (
+            <div className="gpu-install-card">
+              <div>
+                <strong>{performance.device_name ?? "NVIDIA"}</strong>
+                <small>{messages.gpuAvailableHint}</small>
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={installingAcceleration}
+                onClick={() => {
+                  setInstallingAcceleration(true);
+                  void run(onInstallAcceleration).finally(() => setInstallingAcceleration(false));
+                }}
+              >
+                {installingAcceleration ? messages.gpuInstalling : messages.enableGpu}
+              </button>
+            </div>
+          ) : (
+            <div className="read-only-setting">
+              <span>{messages.gpuAcceleration}</span>
+              <strong>{messages.cpuMode}</strong>
+              <small>{messages.noNvidiaHint}</small>
+            </div>
+          )}
         </div>
 
         {wiki && onRename && onRemove && (

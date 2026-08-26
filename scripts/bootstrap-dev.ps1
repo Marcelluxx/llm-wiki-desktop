@@ -28,6 +28,13 @@ try {
 
     uv sync --locked --all-groups
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    if ($null -eq (Get-Command nvidia-smi -ErrorAction SilentlyContinue)) {
+        Write-Host "No NVIDIA GPU detected. Skipping the optional CUDA download."
+    }
+    else {
+        Write-Host "NVIDIA GPU detected. CUDA remains optional and can be enabled from Settings > Performance."
+    }
 }
 finally {
     Pop-Location

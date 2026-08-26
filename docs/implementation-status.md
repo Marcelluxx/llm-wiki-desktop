@@ -38,9 +38,9 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
   atomically copies originals into per-wiki content-addressed storage.
 - Local DOCX extraction preserves headings, paragraphs, lists, and tables; TXT and
   Markdown bypass OCR while retaining their source structure.
-- OpenDataLoader PDF 2.5.5 and its hybrid dependencies are pinned. PDF jobs start a
-  loopback-only backend and use full hybrid processing with force OCR enabled,
-  including for digital PDFs.
+- OpenDataLoader PDF 2.5.5 is pinned. PDFs exposing selectable text use its fast
+  structural Markdown/JSON parser; only PDFs without embedded text start the
+  loopback-only full hybrid force-OCR backend.
 - Each processed source produces a validated Markdown artifact and an
   Obsidian-ready note under `sources/`.
 - Structured JSONL job logs are persisted inside each wiki, exposed in the wiki
@@ -50,22 +50,27 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
   recommended upstream, avoiding repeated JVM startup. The UI retains elapsed time,
   process-tree CPU/RAM metrics, live model/backend events, inactivity warnings,
   cancellation, and a page-count-aware watchdog.
-- OCR device selection now prefers CUDA when available, reports NVIDIA hardware
-  paired with a CPU-only PyTorch runtime, and includes an optional isolated NVIDIA
-  acceleration installer for development builds.
+- Startup detects NVIDIA hardware without downloading CUDA. Settings reports CPU/GPU
+  status and exposes the optional CUDA installer only when NVIDIA hardware exists.
+- Import cancellation is reflected immediately, stops the visible timer, re-enables
+  document selection, and still signals the worker to terminate active child tools.
+- The selected-file summary is a horizontally scrollable card grid with a clear
+  file-type icon for every queued document.
 
 ## Validation evidence
 
 - `scripts/quality.ps1` passes on Windows with Rust 1.98.0 and Python 3.12.13.
-- Frontend: format, lint, strict type check, 11 tests, and production build pass.
+- Frontend: format, lint, strict type check, 13 tests, and production build pass.
 - Rust: format, strict Clippy, 8 contract/registry/catalog tests, and workspace tests pass.
-- Python/schema: Ruff, strict mypy, 10 tests, JSON Schema validation, and unsafe-path
+- Python/schema: Ruff, strict mypy, 14 tests, JSON Schema validation, and unsafe-path
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.
 - A local forced-OCR benchmark on an RTX 2070 processed the four 37-page test PDFs
   in one 78.9-second batch. The first 15-page document absorbed model warm-up;
   subsequent 9-, 7-, and 6-page documents reused the loaded pipeline.
+- A real 22-page digital PDF completed structural Markdown and JSON extraction in
+  2.28 seconds without starting OCR.
 - Browser inspection confirmed unclipped first-run, empty-dashboard, create-dialog,
   settings, Italian/English expansion, and initial keyboard focus behavior.
 

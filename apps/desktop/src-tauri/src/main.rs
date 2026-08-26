@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{Command as StdCommand, Stdio},
     sync::{Arc, Mutex},
 };
 
@@ -81,6 +81,14 @@ struct JobLogEntry {
     message: String,
     source: Option<String>,
     detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+struct PerformanceStatus {
+    nvidia_present: bool,
+    cuda_enabled: bool,
+    device_name: Option<String>,
 }
 
 fn with_registry<T>(
@@ -168,6 +176,58 @@ fn get_wiki_settings(
     state: State<'_, AppState>,
 ) -> Result<WikiSettings, CommandError> {
     with_registry(state, |registry| registry.read_settings(&wiki_id))
+}
+
+#[tauri::command]
+fn get_performance_status() -> PerformanceStatus {
+    performance_status()
+}
+
+#[tauri::command]
+async fn install_nvidia_acceleration() -> Result<PerformanceStatus, CommandError> {
+    let detected = performance_status();
+    if !detected.nvidia_present {
+        return Err(CommandError {
+            code: "nvidia_unavailable",
+            message: "No NVIDIA graphics card was detected".to_owned(),
+        });
+    }
+    let script = repository_root().join("scripts/enable-nvidia-acceleration.ps1");
+    if !script.is_file() {
+        return Err(CommandError {
+            code: "installer_unavailable",
+            message: "The NVIDIA acceleration installer is not available".to_owned(),
+        });
+    }
+    let output = Command::new("powershell.exe")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(script)
+        .current_dir(repository_root())
+        .output()
+        .await
+        .map_err(|error| CommandError {
+            code: "acceleration_install_failed",
+            message: error.to_string(),
+        })?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(CommandError {
+            code: "acceleration_install_failed",
+            message: if detail.is_empty() {
+                "NVIDIA acceleration could not be installed".to_owned()
+            } else {
+                detail
+            },
+        });
+    }
+    let status = performance_status();
+    if !status.cuda_enabled {
+        return Err(CommandError {
+            code: "acceleration_install_failed",
+            message: "CUDA was installed but could not be activated".to_owned(),
+        });
+    }
+    Ok(status)
 }
 
 #[tauri::command]
@@ -394,15 +454,38 @@ async fn run_worker_job(
                         "payload": {"action": "cancel_job", "job_id": job.job_id}
                     });
                     let _ = write_worker_message(&mut stdin, &cancel).await;
+                    let _ = catalog.update_job(
+                        &job.job_id,
+                        JobState::Cancelled,
+                        0.0,
+                        Some("stage.cancelled"),
+                    );
+                    let _ = on_event.send(JobEvent {
+                        job_id: job.job_id.clone(),
+                        state: JobState::Cancelled,
+                        progress: 0.0,
+                        message: "stage.cancelled".to_owned(),
+                        log_level: Some("warning".to_owned()),
+                        source: None,
+                        detail: None,
+                    });
                 }
             }
             next_line = lines.next_line() => {
                 let Ok(Some(line)) = next_line else {
-                    finish_with_error(&catalog, &job, &on_event, "stage.worker_stopped");
+                    if !cancellation_sent {
+                        finish_with_error(&catalog, &job, &on_event, "stage.worker_stopped");
+                    }
                     break;
                 };
                 let Ok(envelope) = serde_json::from_str::<IpcEnvelope>(&line) else { continue; };
                 if envelope.request_id != request_id { continue; }
+                if cancellation_sent {
+                    if matches!(envelope.message_type, MessageType::Response | MessageType::Error) {
+                        break;
+                    }
+                    continue;
+                }
                 if handle_worker_event(&catalog, &job, &on_event, envelope) { break; }
             }
         }
@@ -582,19 +665,73 @@ fn finish_with_error(
 }
 
 fn worker_command() -> Command {
-    let repository_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let python = std::env::var_os("LLM_WIKI_PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| repository_root.join(".venv/Scripts/python.exe"));
+    let root = repository_root();
+    let python = worker_python();
     let mut command = Command::new(python);
     command
         .arg("-m")
         .arg("llm_wiki_engine.cli")
-        .current_dir(repository_root)
+        .current_dir(root)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     command
+}
+
+fn repository_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..")
+}
+
+fn worker_python() -> PathBuf {
+    std::env::var_os("LLM_WIKI_PYTHON")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repository_root().join(".venv/Scripts/python.exe"))
+}
+
+fn performance_status() -> PerformanceStatus {
+    let gpu_output = StdCommand::new("nvidia-smi")
+        .args(["--query-gpu=name", "--format=csv,noheader"])
+        .stdin(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success());
+    let nvidia_name = gpu_output.and_then(|output| {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+    });
+    if nvidia_name.is_none() {
+        return PerformanceStatus {
+            nvidia_present: false,
+            cuda_enabled: false,
+            device_name: None,
+        };
+    }
+    let cuda_output = StdCommand::new(worker_python())
+        .args([
+            "-c",
+            "import torch; print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else '')",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .ok()
+        .filter(|output| output.status.success());
+    let cuda_name = cuda_output.and_then(|output| {
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned)
+    });
+    PerformanceStatus {
+        nvidia_present: true,
+        cuda_enabled: cuda_name.is_some(),
+        device_name: cuda_name.or(nvidia_name),
+    }
 }
 
 fn parse_job_state(value: &str) -> JobState {
@@ -649,6 +786,8 @@ fn main() {
             rename_wiki,
             remove_wiki_registration,
             get_wiki_settings,
+            get_performance_status,
+            install_nvidia_acceleration,
             list_jobs,
             start_import,
             cancel_job,

@@ -21,6 +21,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [currentActivity, setCurrentActivity] = useState<JobEvent | null>(null);
   const [clock, setClock] = useState(() => Date.now());
+  const [cancelling, setCancelling] = useState(false);
   const activeJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(job.state));
 
   useEffect(() => {
@@ -87,6 +88,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
       setLogs([]);
       setLogsOpen(true);
       setCurrentActivity(null);
+      setCancelling(false);
       const job = await client.startImport(wiki.wiki_id, paths, applyEvent);
       setSelectedJobId(job.job_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
@@ -97,10 +99,20 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
 
   async function cancelActiveJob() {
     if (!activeJob) return;
+    setCancelling(true);
     try {
       await client.cancelJob(activeJob.job_id);
+      applyEvent({
+        job_id: activeJob.job_id,
+        state: "cancelled",
+        progress: 0,
+        message: "stage.cancelled",
+        log_level: "warning",
+      });
     } catch (reason) {
       setError(formatAppError(reason, messages));
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -137,10 +149,24 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
           </div>
         )}
         {selectedNames.length > 0 && (
-          <p className="selected-summary">
-            {messages.selectedDocuments.replace("{count}", String(selectedNames.length))}
-            <small>{selectedNames.slice(0, 3).join(" · ")}</small>
-          </p>
+          <section className="document-queue" aria-label={messages.documentsInQueue}>
+            <strong>
+              {messages.selectedDocuments.replace("{count}", String(selectedNames.length))}
+            </strong>
+            <ul>
+              {selectedNames.map((name) => (
+                <li key={name} title={name}>
+                  <span
+                    className={`document-icon document-icon--${fileKind(name)}`}
+                    aria-hidden="true"
+                  >
+                    {fileExtension(name)}
+                  </span>
+                  <span>{name}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
         {activeJob && (
           <div className="job-progress" role="status" aria-live="polite">
@@ -166,8 +192,13 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
                 <code>{formatActivityDetail(currentActivity.detail, messages)}</code>
               )}
             </div>
-            <button type="button" className="secondary-button" onClick={cancelActiveJob}>
-              {messages.cancelImport}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={cancelActiveJob}
+              disabled={cancelling}
+            >
+              {cancelling ? messages.stoppingImport : messages.cancelImport}
             </button>
           </div>
         )}
@@ -273,12 +304,25 @@ function processingMessage(message: string, messages: Messages): string {
     "ocr.backend_error": messages.ocrBackendError,
     "ocr.possible_stall": messages.ocrPossibleStall,
     "ocr.gpu_runtime_missing": messages.ocrGpuRuntimeMissing,
+    "pdf.digital_detected": messages.pdfDigitalDetected,
+    "pdf.ocr_required": messages.pdfOcrRequired,
+    "pdf.direct_batch_started": messages.pdfDirectBatchStarted,
+    "source.text_extracted": messages.sourceTextExtracted,
   };
   return labels[message] ?? message;
 }
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
+}
+
+function fileExtension(name: string): string {
+  return name.split(".").pop()?.toUpperCase().slice(0, 4) || "FILE";
+}
+
+function fileKind(name: string): string {
+  const extension = name.split(".").pop()?.toLowerCase() ?? "";
+  return ["pdf", "docx", "txt", "md"].includes(extension) ? extension : "file";
 }
 
 function stageLabel(state: JobSummary["state"], messages: Messages): string {

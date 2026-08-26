@@ -70,6 +70,12 @@ export interface WikiSettings {
   open_in_obsidian_after_publish?: boolean;
 }
 
+export interface PerformanceStatus {
+  nvidia_present: boolean;
+  cuda_enabled: boolean;
+  device_name: string | null;
+}
+
 export interface JobCheckpoint {
   state: JobState;
   completed_at: string;

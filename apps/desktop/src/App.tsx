@@ -4,7 +4,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { WikiDashboard } from "./components/WikiDashboard";
 import { WikiForm } from "./components/WikiForm";
 import { WikiHome } from "./components/WikiHome";
-import type { RegistrySnapshot, WikiRegistration } from "./contracts";
+import type { PerformanceStatus, RegistrySnapshot, WikiRegistration } from "./contracts";
 import { formatAppError, getMessages, type Language } from "./i18n";
 import { registryClient, type RegistryClient, type WikiInput } from "./services/registry";
 
@@ -18,6 +18,7 @@ export function App({ client = registryClient }: AppProps) {
   const [formMode, setFormMode] = useState<"create" | "register" | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [performance, setPerformance] = useState<PerformanceStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -31,6 +32,13 @@ export function App({ client = registryClient }: AppProps) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void client
+      .getPerformanceStatus()
+      .then(setPerformance)
+      .catch(() => undefined);
+  }, [client]);
 
   const language: Language = snapshot?.interface_language ?? "it";
   const messages = useMemo(() => getMessages(language), [language]);
@@ -153,6 +161,11 @@ export function App({ client = registryClient }: AppProps) {
           language={language}
           messages={messages}
           wiki={currentWiki}
+          performance={performance}
+          onInstallAcceleration={async () => {
+            const status = await client.installNvidiaAcceleration();
+            setPerformance(status);
+          }}
           onLanguage={chooseLanguage}
           onRename={currentWiki ? renameCurrent : undefined}
           onRemove={currentWiki ? removeCurrent : undefined}

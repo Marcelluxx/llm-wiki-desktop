@@ -126,7 +126,24 @@ class JobProcessor:
             self._extract_direct(source, progress)
             processed += 1
         if pdf_sources:
-            self._extract_pdfs(pdf_sources, 0.72)
+            digital_pdfs: list[AcquiredSource] = []
+            scanned_pdfs: list[AcquiredSource] = []
+            for source in pdf_sources:
+                destination = (
+                    digital_pdfs if pdf_has_embedded_text(source.raw_path) else scanned_pdfs
+                )
+                destination.append(source)
+                self._logger.write(
+                    "info",
+                    "pdf.digital_detected" if destination is digital_pdfs else "pdf.ocr_required",
+                    state=JobState.EXTRACTING,
+                    progress=0.7,
+                    source=source.original_name,
+                )
+            if digital_pdfs:
+                self._extract_digital_pdfs(digital_pdfs, 0.72)
+            if scanned_pdfs:
+                self._extract_ocr_pdfs(scanned_pdfs, 0.76)
             processed += len(pdf_sources)
 
         self._validate(acquired)
@@ -216,24 +233,65 @@ class JobProcessor:
             detail=f"extractor={extractor}",
         )
 
-    def _extract_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
+    def _extract_digital_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
+        """Extract selectable PDF content with OpenDataLoader's fast structural parser."""
+        self._check_cancelled()
+        job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
+        staged_sources = stage_pdf_sources(sources, job_directory / "digital-pdf-input")
+        output_directory = job_directory / "digital-pdf-output"
+        output_directory.mkdir(parents=True, exist_ok=True)
+        client_executable = Path(sys.executable).with_name("opendataloader-pdf.exe")
+        if not client_executable.is_file():
+            raise RuntimeError("OpenDataLoader PDF executable is not installed")
+        page_counts = [pdf_page_count(path) for path in staged_sources]
+        total_pages = sum(page_counts)
+        self._logger.write(
+            "info",
+            "pdf.direct_batch_started",
+            state=JobState.EXTRACTING,
+            progress=progress,
+            detail=f"documents={len(sources)} pages={total_pages} ocr=false single_jvm=true",
+        )
+        log_path = self._logger.path.with_name(f"{self._job_id}-pdf-parser.log")
+        with log_path.open("ab") as process_log:
+            process = subprocess.Popen(
+                build_pdf_direct_batch_command(client_executable, staged_sources, output_directory),
+                stdin=subprocess.DEVNULL,
+                stdout=process_log,
+                stderr=subprocess.STDOUT,
+                creationflags=hidden_process_flags(),
+            )
+            monitor_conversion_process(process, self._cancellation, total_pages)
+        if process.returncode != 0:
+            raise RuntimeError(
+                f"OpenDataLoader exited with code {process.returncode}; see {log_path.name}"
+            )
+        for index, (source, staged_path) in enumerate(
+            zip(sources, staged_sources, strict=True), start=1
+        ):
+            markdown, semantic_json = read_pdf_outputs(output_directory, staged_path, source)
+            self._write_artifacts(
+                source,
+                markdown,
+                "opendataloader-pdf-structured-text",
+                semantic_json=semantic_json,
+            )
+            self._logger.write(
+                "info",
+                "source.text_extracted",
+                state=JobState.EXTRACTING,
+                progress=progress + (0.04 * index / len(sources)),
+                source=source.original_name,
+                detail="ocr=false format=markdown,json",
+            )
+
+    def _extract_ocr_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
         self._check_cancelled()
         job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
         input_directory = job_directory / "pdf-input"
         output_directory = job_directory / "pdf-output"
-        input_directory.mkdir(parents=True, exist_ok=True)
         output_directory.mkdir(parents=True, exist_ok=True)
-        staged_sources: list[Path] = []
-        for index, source in enumerate(sources, start=1):
-            staged_path = input_directory / (
-                f"{index:04d}-{source.content_sha256[:12]}-{sanitize_filename(source.original_name)}"
-            )
-            if not staged_path.exists():
-                try:
-                    os.link(source.raw_path, staged_path)
-                except OSError:
-                    shutil.copyfile(source.raw_path, staged_path)
-            staged_sources.append(staged_path)
+        staged_sources = stage_pdf_sources(sources, input_directory)
         page_counts = [pdf_page_count(path) for path in staged_sources]
         total_pages = sum(page_counts)
         if total_pages == 0:
@@ -328,21 +386,8 @@ class JobProcessor:
                 for document_index, (source, staged_path, page_count) in enumerate(
                     zip(sources, staged_sources, page_counts, strict=True), start=1
                 ):
-                    markdown_path = find_pdf_output(output_directory, staged_path.stem, ".md")
-                    if markdown_path is None:
-                        raise RuntimeError(
-                            f"OpenDataLoader did not produce Markdown for {source.original_name}"
-                        )
-                    markdown = markdown_path.read_text(encoding="utf-8", errors="replace").strip()
-                    if not markdown:
-                        raise RuntimeError(
-                            f"OpenDataLoader produced empty Markdown for {source.original_name}"
-                        )
-                    semantic_path = find_pdf_output(output_directory, staged_path.stem, ".json")
-                    semantic_json = (
-                        json.loads(semantic_path.read_text(encoding="utf-8"))
-                        if semantic_path is not None
-                        else None
+                    markdown, semantic_json = read_pdf_outputs(
+                        output_directory, staged_path, source
                     )
                     self._write_artifacts(
                         source,
@@ -494,6 +539,55 @@ def pdf_page_count(path: Path) -> int:
         document.close()
 
 
+def pdf_has_embedded_text(path: Path) -> bool:
+    """Return true as soon as a PDF exposes selectable alphanumeric text."""
+    document = pdfium.PdfDocument(str(path))
+    try:
+        for page in document:
+            text_page = page.get_textpage()
+            try:
+                if any(character.isalnum() for character in text_page.get_text_range()):
+                    return True
+            finally:
+                text_page.close()
+                page.close()
+        return False
+    finally:
+        document.close()
+
+
+def stage_pdf_sources(sources: list[AcquiredSource], input_directory: Path) -> list[Path]:
+    input_directory.mkdir(parents=True, exist_ok=True)
+    staged_sources: list[Path] = []
+    for index, source in enumerate(sources, start=1):
+        staged_path = input_directory / (
+            f"{index:04d}-{source.content_sha256[:12]}-{sanitize_filename(source.original_name)}"
+        )
+        if not staged_path.exists():
+            try:
+                os.link(source.raw_path, staged_path)
+            except OSError:
+                shutil.copyfile(source.raw_path, staged_path)
+        staged_sources.append(staged_path)
+    return staged_sources
+
+
+def read_pdf_outputs(
+    output_directory: Path, staged_path: Path, source: AcquiredSource
+) -> tuple[str, object | None]:
+    markdown_path = find_pdf_output(output_directory, staged_path.stem, ".md")
+    if markdown_path is None:
+        raise RuntimeError(f"OpenDataLoader did not produce Markdown for {source.original_name}")
+    markdown = markdown_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not markdown:
+        raise RuntimeError(f"OpenDataLoader produced empty Markdown for {source.original_name}")
+    semantic_path = find_pdf_output(output_directory, staged_path.stem, ".json")
+    semantic_json = (
+        json.loads(semantic_path.read_text(encoding="utf-8")) if semantic_path is not None else None
+    )
+    return markdown, semantic_json
+
+
 def preferred_ocr_device() -> str:
     try:
         import torch
@@ -548,6 +642,37 @@ def build_pdf_batch_command(
         "--hybrid-mode",
         "full",
     ]
+
+
+def build_pdf_direct_batch_command(
+    client_executable: Path,
+    staged_sources: list[Path],
+    output_directory: Path,
+) -> list[str]:
+    return [
+        str(client_executable),
+        *[str(path) for path in staged_sources],
+        "--output-dir",
+        str(output_directory),
+        "--format",
+        "markdown,json",
+        "--markdown-page-separator",
+        "<!-- page: %page-number% -->",
+    ]
+
+
+def monitor_conversion_process(
+    process: subprocess.Popen[bytes], cancellation: Event, total_pages: int
+) -> None:
+    started_at = time.monotonic()
+    timeout_seconds = max(120.0, total_pages * 10.0)
+    while process.poll() is None:
+        if cancellation.wait(0.1):
+            terminate_process(process)
+            raise IngestionCancelled
+        if time.monotonic() - started_at >= timeout_seconds:
+            terminate_process(process)
+            raise TimeoutError("Structured PDF extraction exceeded its safety timeout")
 
 
 @dataclass(frozen=True, slots=True)

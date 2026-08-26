@@ -439,22 +439,118 @@ label small,
   color: var(--muted);
 }
 
-.selected-summary {
+.document-queue {
   display: grid;
-  gap: 0.35rem;
-  width: min(100%, 35rem);
-  padding: 0.8rem 1rem;
-  border-radius: 0.8rem;
-  background: var(--green-soft);
-  color: var(--ink);
-  font-weight: 750;
+  width: min(100%, 58rem);
+  gap: 0.65rem;
+  text-align: left;
 }
 
-.selected-summary small {
+.document-queue > strong {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.document-queue ul {
+  display: grid;
+  grid-auto-columns: minmax(9.5rem, 1fr);
+  grid-auto-flow: column;
+  gap: 0.65rem;
   margin: 0;
+  padding: 0.25rem 0 0.65rem;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+
+.document-queue li {
+  display: grid;
+  min-height: 7.2rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid #c9d8d2;
+  border-radius: 0.9rem;
+  background: #fff;
+  box-shadow: 0 0.25rem 0.8rem rgb(31 56 48 / 6%);
+}
+
+.document-queue li > span:last-child {
+  width: 100%;
   overflow: hidden;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.document-icon {
+  display: grid;
+  width: 2.8rem;
+  height: 3.5rem;
+  place-items: end center;
+  padding-bottom: 0.45rem;
+  border-radius: 0.3rem 0.65rem 0.3rem 0.3rem;
+  color: white;
+  background: #657a73;
+  font-size: 0.58rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+}
+
+.document-icon--pdf {
+  background: #c84b45;
+}
+.document-icon--docx {
+  background: #3976b9;
+}
+.document-icon--txt {
+  background: #657a73;
+}
+.document-icon--md {
+  background: #5d4d85;
+}
+
+.settings-section__heading,
+.gpu-install-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.performance-settings {
+  gap: 0.9rem;
+}
+
+.status-badge {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.status-badge--enabled {
+  color: #155f48;
+  background: #d7f2e7;
+}
+
+.gpu-install-card {
+  align-items: flex-start;
+}
+
+.gpu-install-card div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.gpu-install-card small {
+  max-width: 18rem;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .job-progress {

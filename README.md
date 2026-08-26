@@ -10,8 +10,9 @@ implementation plan are available in `docs/superpowers/`.
 The current desktop build can create multiple isolated wikis, select PDF, DOCX,
 TXT, and Markdown files through the native Windows picker, and process them in a
 cancellable background job. Originals are copied into immutable content-addressed
-storage, DOCX/TXT/MD files are converted locally, and every PDF is sent through the
-OpenDataLoader full hybrid force-OCR route. Obsidian-ready source notes, extraction
+storage and DOCX/TXT/MD files are converted locally. PDFs with selectable text use
+OpenDataLoader's fast structural Markdown/JSON extraction; only image-based PDFs use
+the full hybrid force-OCR route. Obsidian-ready source notes, extraction
 artifacts, durable progress, and per-job logs are stored inside the selected wiki.
 
 Processing logs are visible from the wiki screen and are also streamed to the
@@ -25,11 +26,10 @@ batch the activity panel reports elapsed time, process-tree CPU/RAM use, model
 downloads, and relevant backend messages. A low-activity watchdog warns after two
 minutes and a page-count-aware safety timeout stops a genuinely stuck batch.
 
-The worker automatically uses CUDA when the installed PyTorch runtime can access an
-NVIDIA GPU, otherwise it falls back to CPU and reports the missing acceleration in
-the application log. Developers can install the optional NVIDIA runtime with
-`scripts/enable-nvidia-acceleration.ps1`; the final installer will expose this as a
-guided setup choice.
+The app detects NVIDIA hardware without downloading CUDA. Settings > Performance
+shows whether GPU acceleration is active and offers a one-click optional CUDA
+download only on NVIDIA systems. Without NVIDIA, OCR stays in CPU mode and the
+approximately 1.8 GB CUDA runtime is never requested.
 
 ## Architecture
 

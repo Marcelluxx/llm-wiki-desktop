@@ -464,6 +464,7 @@ label small,
 }
 
 .document-queue li {
+  position: relative;
   display: grid;
   min-height: 7.2rem;
   place-items: center;
@@ -476,7 +477,16 @@ label small,
   box-shadow: 0 0.25rem 0.8rem rgb(31 56 48 / 6%);
 }
 
-.document-queue li > span:last-child {
+.document-queue li[data-status="processing"] {
+  border-color: var(--green);
+  background: #f4faf7;
+}
+
+.document-queue li[data-status="completed"] {
+  opacity: 0.72;
+}
+
+.document-name {
   width: 100%;
   overflow: hidden;
   color: var(--ink);
@@ -485,6 +495,38 @@ label small,
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.document-queue li > small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.queue-remove-button {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #70423e;
+  background: #f8e5e3;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
 }
 
 .document-icon {

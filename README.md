@@ -9,8 +9,11 @@ implementation plan are available in `docs/superpowers/`.
 
 The current desktop build can create multiple isolated wikis, select PDF, DOCX,
 TXT, and Markdown files through the native Windows picker, and process them in a
-cancellable background job. Originals are copied into immutable content-addressed
-storage and DOCX/TXT/MD files are converted locally. PDFs with selectable text use
+cancellable background job. The queue is cumulative: later selections are appended,
+duplicates are ignored, and queued files can be removed individually. Originals stay
+in their existing folders; each wiki records their SHA-256, drive root, and relative
+path in its private catalog instead of creating another copy. DOCX/TXT/MD files are
+converted locally. PDFs with selectable text use
 OpenDataLoader's fast structural Markdown/JSON extraction; only image-based PDFs use
 the full hybrid force-OCR route. Obsidian-ready source notes, extraction
 artifacts, durable progress, and per-job logs are stored inside the selected wiki.

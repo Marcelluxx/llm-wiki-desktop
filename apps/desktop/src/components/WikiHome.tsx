@@ -12,9 +12,18 @@ interface WikiHomeProps {
   onSettings(): void;
 }
 
+type QueueStatus = "queued" | "processing" | "completed";
+
+interface QueuedDocument {
+  path: string;
+  name: string;
+  status: QueueStatus;
+}
+
 export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHomeProps) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
-  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  const [documents, setDocuments] = useState<QueuedDocument[]>([]);
+  const [processingPaths, setProcessingPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<JobLogEntry[]>([]);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -23,6 +32,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   const [clock, setClock] = useState(() => Date.now());
   const [cancelling, setCancelling] = useState(false);
   const activeJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(job.state));
+  const queuedDocuments = documents.filter((document) => document.status === "queued");
 
   useEffect(() => {
     void client
@@ -84,15 +94,61 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
     try {
       const paths = await client.pickDocuments();
       if (paths.length === 0) return;
-      setSelectedNames(paths.map(fileName));
+      setDocuments((current) => {
+        const knownPaths = new Set(current.map((document) => document.path.toLocaleLowerCase()));
+        const additions = paths
+          .filter((path) => !knownPaths.has(path.toLocaleLowerCase()))
+          .map((path) => ({ path, name: fileName(path), status: "queued" as const }));
+        return [...current, ...additions];
+      });
+    } catch (reason) {
+      setError(formatAppError(reason, messages));
+    }
+  }
+
+  function removeDocument(path: string) {
+    setDocuments((current) =>
+      current.filter((document) => document.path !== path || document.status !== "queued"),
+    );
+  }
+
+  async function startQueuedImport() {
+    const batch = queuedDocuments.map((document) => document.path);
+    if (batch.length === 0 || activeJob) return;
+    setError(null);
+    setProcessingPaths(batch);
+    setDocuments((current) =>
+      current.map((document) =>
+        batch.includes(document.path) ? { ...document, status: "processing" } : document,
+      ),
+    );
+    try {
       setLogs([]);
       setLogsOpen(true);
       setCurrentActivity(null);
       setCancelling(false);
-      const job = await client.startImport(wiki.wiki_id, paths, applyEvent);
+      const job = await client.startImport(wiki.wiki_id, batch, (event) => {
+        applyEvent(event);
+        if (["completed", "failed", "cancelled"].includes(event.state)) {
+          setDocuments((current) =>
+            current.map((document) =>
+              batch.includes(document.path)
+                ? { ...document, status: event.state === "completed" ? "completed" : "queued" }
+                : document,
+            ),
+          );
+          setProcessingPaths([]);
+        }
+      });
       setSelectedJobId(job.job_id);
       setJobs((current) => [job, ...current.filter((item) => item.job_id !== job.job_id)]);
     } catch (reason) {
+      setDocuments((current) =>
+        current.map((document) =>
+          batch.includes(document.path) ? { ...document, status: "queued" } : document,
+        ),
+      );
+      setProcessingPaths([]);
       setError(formatAppError(reason, messages));
     }
   }
@@ -109,6 +165,12 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
         message: "stage.cancelled",
         log_level: "warning",
       });
+      setDocuments((current) =>
+        current.map((document) =>
+          processingPaths.includes(document.path) ? { ...document, status: "queued" } : document,
+        ),
+      );
+      setProcessingPaths([]);
     } catch (reason) {
       setError(formatAppError(reason, messages));
     } finally {
@@ -148,21 +210,32 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
             {error}
           </div>
         )}
-        {selectedNames.length > 0 && (
+        {documents.length > 0 && (
           <section className="document-queue" aria-label={messages.documentsInQueue}>
             <strong>
-              {messages.selectedDocuments.replace("{count}", String(selectedNames.length))}
+              {messages.selectedDocuments.replace("{count}", String(documents.length))}
             </strong>
             <ul>
-              {selectedNames.map((name) => (
-                <li key={name} title={name}>
+              {documents.map((document) => (
+                <li key={document.path} title={document.path} data-status={document.status}>
                   <span
-                    className={`document-icon document-icon--${fileKind(name)}`}
+                    className={`document-icon document-icon--${fileKind(document.name)}`}
                     aria-hidden="true"
                   >
-                    {fileExtension(name)}
+                    {fileExtension(document.name)}
                   </span>
-                  <span>{name}</span>
+                  <span className="document-name">{document.name}</span>
+                  <small>{queueStatusLabel(document.status, messages)}</small>
+                  {document.status === "queued" && (
+                    <button
+                      type="button"
+                      className="queue-remove-button"
+                      onClick={() => removeDocument(document.path)}
+                      aria-label={`${messages.removeDocument}: ${document.name}`}
+                    >
+                      ×
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -202,14 +275,19 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
             </button>
           </div>
         )}
-        <button
-          type="button"
-          className="primary-button"
-          onClick={addDocuments}
-          disabled={Boolean(activeJob)}
-        >
-          {messages.addDocuments}
-        </button>
+        <div className="import-actions">
+          <button type="button" className="secondary-button" onClick={addDocuments}>
+            {messages.addDocuments}
+          </button>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={startQueuedImport}
+            disabled={Boolean(activeJob) || queuedDocuments.length === 0}
+          >
+            {messages.startImport.replace("{count}", String(queuedDocuments.length))}
+          </button>
+        </div>
         <small>{messages.supportedDocuments}</small>
         {selectedJobId && (
           <div className="log-area">
@@ -323,6 +401,12 @@ function fileExtension(name: string): string {
 function fileKind(name: string): string {
   const extension = name.split(".").pop()?.toLowerCase() ?? "";
   return ["pdf", "docx", "txt", "md"].includes(extension) ? extension : "file";
+}
+
+function queueStatusLabel(status: QueueStatus, messages: Messages): string {
+  if (status === "processing") return messages.documentProcessing;
+  if (status === "completed") return messages.documentCompleted;
+  return messages.documentQueued;
 }
 
 function stageLabel(state: JobSummary["state"], messages: Messages): string {

@@ -1,10 +1,10 @@
 # Implementation status
 
-Updated: 2026-08-25
+Updated: 2026-08-26
 
 ## Current milestone
 
-Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
+Milestones 4–5 — reference-based extraction and selective PDF OCR: in progress.
 
 ## Completed outcomes
 
@@ -34,8 +34,9 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
   progress, cancellation, shutdown, and deterministic crash support.
 - Enabled document intake interface with selected-file summary, progress bar, and
   localized status/error states.
-- Actual source paths now cross the Rust/Python boundary; the worker hashes and
-  atomically copies originals into per-wiki content-addressed storage.
+- Actual source paths now cross the Rust/Python boundary; the worker hashes each
+  original and stores its drive root plus relative path in the per-wiki SQLite
+  catalog without copying the source file.
 - Local DOCX extraction preserves headings, paragraphs, lists, and tables; TXT and
   Markdown bypass OCR while retaining their source structure.
 - OpenDataLoader PDF 2.5.5 is pinned. PDFs exposing selectable text use its fast
@@ -56,13 +57,16 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
   document selection, and still signals the worker to terminate active child tools.
 - The selected-file summary is a horizontally scrollable card grid with a clear
   file-type icon for every queued document.
+- Document selection is cumulative, ignores repeated paths, supports per-file
+  removal before processing, and keeps completed documents visible while new ones
+  are appended for the next import.
 
 ## Validation evidence
 
 - `scripts/quality.ps1` passes on Windows with Rust 1.98.0 and Python 3.12.13.
-- Frontend: format, lint, strict type check, 13 tests, and production build pass.
+- Frontend: format, lint, strict type check, 14 tests, and production build pass.
 - Rust: format, strict Clippy, 8 contract/registry/catalog tests, and workspace tests pass.
-- Python/schema: Ruff, strict mypy, 14 tests, JSON Schema validation, and unsafe-path
+- Python/schema: Ruff, strict mypy, 15 tests, JSON Schema validation, and unsafe-path
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.

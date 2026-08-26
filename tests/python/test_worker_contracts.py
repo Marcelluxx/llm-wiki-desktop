@@ -173,7 +173,20 @@ def test_worker_acquires_and_extracts_real_text_and_markdown(tmp_path: Path) -> 
     assert responses[-1]["message_type"] == "response"
     assert responses[-1]["payload"]["processed_sources"] == 2
     assert len(list((wiki_root / "sources").glob("*.md"))) == 2
-    assert len(list((wiki_root / ".llm-wiki" / "raw").rglob("*.txt"))) == 1
+    assert not (wiki_root / ".llm-wiki" / "raw").exists()
+    with sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3") as catalog:
+        stored_sources = catalog.execute(
+            "SELECT content_sha256, relative_path, path_base FROM source_records "
+            "ORDER BY original_name"
+        ).fetchall()
+    assert len(stored_sources) == 2
+    assert all(
+        len(row[0]) == 64 and row[2] == text_source.resolve().anchor for row in stored_sources
+    )
+    assert {row[1] for row in stored_sources} == {
+        str(markdown_source.resolve().relative_to(Path(markdown_source.resolve().anchor))),
+        str(text_source.resolve().relative_to(Path(text_source.resolve().anchor))),
+    }
     assert (wiki_root / ".llm-wiki" / "logs" / "job-real.jsonl").is_file()
 
 
@@ -209,6 +222,47 @@ def test_worker_extracts_docx_structure(tmp_path: Path) -> None:
     note = next((wiki_root / "sources").glob("*.md")).read_text(encoding="utf-8")
     assert "# Capitolo" in note
     assert "Paragrafo" in note
+
+
+def test_duplicate_source_updates_one_catalog_record_without_copying_original(
+    tmp_path: Path,
+) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    database = sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3")
+    database.executescript(
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY);"
+        "CREATE TABLE source_records ("
+        "source_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
+        "original_name TEXT NOT NULL, source_format TEXT NOT NULL, "
+        "content_sha256 TEXT, byte_size INTEGER);"
+        "INSERT INTO jobs VALUES ('job-first');"
+        "INSERT INTO jobs VALUES ('job-second');"
+    )
+    database.close()
+    source = tmp_path / "shared.txt"
+    source.write_text("Una sola sorgente", encoding="utf-8")
+
+    for job_id in ("job-first", "job-second"):
+        output = StringIO()
+        assert (
+            run(StringIO(json.dumps(real_job_request(wiki_root, job_id, [source])) + "\n"), output)
+            == 0
+        )
+
+    with sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3") as catalog:
+        records = catalog.execute(
+            "SELECT job_id, relative_path, path_base FROM source_records"
+        ).fetchall()
+    assert records == [
+        (
+            "job-second",
+            str(source.resolve().relative_to(Path(source.resolve().anchor))),
+            source.resolve().anchor,
+        )
+    ]
+    assert not (wiki_root / ".llm-wiki" / "raw").exists()
 
 
 def test_worker_persists_a_visible_error_log(tmp_path: Path) -> None:

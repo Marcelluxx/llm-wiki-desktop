@@ -140,15 +140,17 @@ streams progress, cancels safely, and resumes durable job checkpoints.
 
 ### Outcome
 
-The app accepts mixed DOCX, TXT, and MD selections, preserves immutable source
-bytes, generates validated artifacts, detects duplicates, and reuses cache entries.
+The app accepts cumulative mixed DOCX, TXT, and MD selections, references originals
+in place, generates validated artifacts, detects duplicates by SHA-256, and reuses
+cache entries.
 
 ### Files and work
 
 - Implement file/folder selection and recursive discovery with explicit supported
   extensions.
 - Detect type from content and extension; reject mismatches safely.
-- Hash exact bytes and copy originals atomically into `.llm-wiki/raw/`.
+- Hash exact bytes and store the source drive root plus relative path in the
+  per-wiki SQLite catalog without copying originals.
 - Write append-only provenance records and content-addressed artifact paths.
 - Implement DOCX extraction for headings, paragraphs, lists, tables, links,
   footnotes when supported, and embedded media.
@@ -406,4 +408,3 @@ Before declaring the MVP complete:
 - confirm the Git working tree is clean;
 - do not push, publish a GitHub Release, or create external resources without the
   user's explicit authorization.
-

@@ -135,7 +135,8 @@ impl WikiCatalog {
     }
 
     fn migrate(&self) -> Result<(), CatalogError> {
-        self.connection()?.execute_batch(
+        let connection = self.connection()?;
+        connection.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA foreign_keys=ON;
              CREATE TABLE IF NOT EXISTS jobs (
@@ -154,7 +155,9 @@ impl WikiCatalog {
                original_name TEXT NOT NULL,
                source_format TEXT NOT NULL,
                content_sha256 TEXT,
-               byte_size INTEGER
+               byte_size INTEGER,
+               relative_path TEXT,
+               path_base TEXT NOT NULL DEFAULT 'legacy_wiki_root'
              );
              CREATE TABLE IF NOT EXISTS stage_checkpoints (
                checkpoint_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,6 +180,13 @@ impl WikiCatalog {
                occurred_at TEXT NOT NULL
              );",
         )?;
+        ensure_column(&connection, "source_records", "relative_path", "TEXT")?;
+        ensure_column(
+            &connection,
+            "source_records",
+            "path_base",
+            "TEXT NOT NULL DEFAULT 'legacy_wiki_root'",
+        )?;
         Ok(())
     }
 
@@ -191,6 +201,26 @@ impl WikiCatalog {
     fn connection(&self) -> Result<Connection, CatalogError> {
         Ok(Connection::open(&self.database_path)?)
     }
+}
+
+fn ensure_column(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), rusqlite::Error> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+    connection.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
+    )?;
+    Ok(())
 }
 
 fn timestamp() -> Result<String, time::error::Format> {

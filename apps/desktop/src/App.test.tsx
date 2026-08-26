@@ -96,15 +96,17 @@ describe("App", () => {
       "C:\\Synthetic\\note.md",
     ]);
     vi.mocked(client.startImport).mockImplementation(async (_wikiId, _paths, onEvent) => {
-      onEvent({
-        job_id: queuedJob.job_id,
-        state: "extracting",
-        progress: 0.72,
-        message: "ocr.working",
-        log_level: "info",
-        source: "manuale.pdf",
-        detail: "document=1/2 page=3/15 elapsed=00:20 cpu=31.2% memory=2048MB",
-      });
+      setTimeout(() => {
+        onEvent({
+          job_id: queuedJob.job_id,
+          state: "extracting",
+          progress: 0.72,
+          message: "ocr.working",
+          log_level: "info",
+          source: "manuale.pdf",
+          detail: "document=1/2 page=3/15 elapsed=00:20 cpu=31.2% memory=2048MB",
+        });
+      }, 0);
       return queuedJob;
     });
     render(<App client={client} />);
@@ -116,14 +118,36 @@ describe("App", () => {
     expect(screen.getAllByText("manuale.pdf").length).toBeGreaterThan(0);
     expect(screen.getByText("note.md")).toBeInTheDocument();
     expect(screen.getByText("PDF")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toHaveValue(0);
-    expect(screen.getAllByText("OCR attivo").length).toBeGreaterThan(0);
-    expect(screen.getByText(/pagina 3\/15/)).toBeInTheDocument();
+    expect(client.startImport).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Avvia importazione (2)" }));
+    await waitFor(() => expect(screen.getByRole("progressbar")).toHaveValue(0.72));
+    expect((await screen.findAllByText("OCR attivo")).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/pagina 3\/15/)).toBeInTheDocument();
     expect(client.startImport).toHaveBeenCalledWith(
       wiki.wiki_id,
       ["C:\\Synthetic\\manuale.pdf", "C:\\Synthetic\\note.md"],
       expect.any(Function),
     );
+  });
+
+  it("adds multiple selections to one queue, deduplicates, and removes individual files", async () => {
+    const client = fakeClient(snapshot([wiki]));
+    vi.mocked(client.pickDocuments)
+      .mockResolvedValueOnce(["C:\\Synthetic\\uno.pdf"])
+      .mockResolvedValueOnce(["C:\\Synthetic\\uno.pdf", "C:\\Synthetic\\due.pdf"]);
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Aggiungi documenti" }));
+    expect(await screen.findByText("1 documenti selezionati")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Aggiungi documenti" }));
+
+    expect(await screen.findByText("2 documenti selezionati")).toBeInTheDocument();
+    expect(screen.getByText("uno.pdf")).toBeInTheDocument();
+    expect(screen.getByText("due.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Rimuovi documento: uno.pdf" }));
+    expect(screen.queryByText("uno.pdf")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Avvia importazione (1)" })).toBeEnabled();
   });
 
   it("stops an import immediately and allows another selection", async () => {
@@ -139,6 +163,7 @@ describe("App", () => {
     await waitFor(() => expect(client.cancelJob).toHaveBeenCalledWith(queuedJob.job_id));
     expect(screen.getByRole("button", { name: "Aggiungi documenti" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Aggiungi documenti" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Avvia importazione (1)" }));
     await waitFor(() => expect(client.startImport).toHaveBeenCalled());
   });
 

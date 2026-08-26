@@ -1,4 +1,4 @@
-"""Immutable source acquisition and local document extraction."""
+"""Reference-based source acquisition and local document extraction."""
 
 from __future__ import annotations
 
@@ -43,6 +43,8 @@ class AcquiredSource:
     content_sha256: str
     byte_size: int
     raw_path: Path
+    relative_path: str
+    path_base: str
 
 
 class JobLogger:
@@ -184,14 +186,8 @@ class JobProcessor:
             raise ValueError(f"Source exceeds the 2 GB limit: {resolved.name}")
         content_hash = sha256_file(resolved, self._cancellation)
         source_id = content_hash
-        raw_directory = self._wiki_root / ".llm-wiki" / "raw" / content_hash
-        raw_directory.mkdir(parents=True, exist_ok=True)
-        safe_name = sanitize_filename(resolved.name)
-        raw_path = raw_directory / safe_name
-        if not raw_path.exists():
-            temporary = raw_directory / f".{safe_name}.{self._job_id}.tmp"
-            shutil.copyfile(resolved, temporary)
-            os.replace(temporary, raw_path)
+        path_base = resolved.anchor
+        relative_path = str(resolved.relative_to(Path(path_base)))
 
         acquired = AcquiredSource(
             source_id=source_id,
@@ -199,7 +195,9 @@ class JobProcessor:
             source_format=suffix.removeprefix("."),
             content_sha256=content_hash,
             byte_size=byte_size,
-            raw_path=raw_path,
+            raw_path=resolved,
+            relative_path=relative_path,
+            path_base=path_base,
         )
         self._record_source(acquired)
         progress = 0.3 * index / total
@@ -209,7 +207,10 @@ class JobProcessor:
             state=JobState.ACQUIRING,
             progress=progress,
             source=resolved.name,
-            detail=f"sha256={content_hash[:12]} bytes={byte_size}",
+            detail=(
+                f"sha256={content_hash[:12]} bytes={byte_size} "
+                f"relative_path={relative_path} copied=false"
+            ),
         )
         return acquired
 
@@ -237,7 +238,7 @@ class JobProcessor:
         """Extract selectable PDF content with OpenDataLoader's fast structural parser."""
         self._check_cancelled()
         job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
-        staged_sources = stage_pdf_sources(sources, job_directory / "digital-pdf-input")
+        staged_sources = [source.raw_path for source in sources]
         output_directory = job_directory / "digital-pdf-output"
         output_directory.mkdir(parents=True, exist_ok=True)
         client_executable = Path(sys.executable).with_name("opendataloader-pdf.exe")
@@ -288,10 +289,9 @@ class JobProcessor:
     def _extract_ocr_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
         self._check_cancelled()
         job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
-        input_directory = job_directory / "pdf-input"
         output_directory = job_directory / "pdf-output"
         output_directory.mkdir(parents=True, exist_ok=True)
-        staged_sources = stage_pdf_sources(sources, input_directory)
+        staged_sources = [source.raw_path for source in sources]
         page_counts = [pdf_page_count(path) for path in staged_sources]
         total_pages = sum(page_counts)
         if total_pages == 0:
@@ -430,6 +430,8 @@ class JobProcessor:
             "source_format": source.source_format,
             "content_sha256": source.content_sha256,
             "byte_size": source.byte_size,
+            "relative_path": source.relative_path,
+            "path_base": source.path_base,
             "extractor": extractor,
             "semantic_json": semantic_json is not None,
         }
@@ -443,6 +445,8 @@ class JobProcessor:
             f"source_id: {source.source_id}\n"
             f"original_name: {json.dumps(source.original_name, ensure_ascii=False)}\n"
             f"source_format: {source.source_format}\n"
+            f"source_relative_path: {json.dumps(source.relative_path, ensure_ascii=False)}\n"
+            f"source_path_base: {json.dumps(source.path_base, ensure_ascii=False)}\n"
             f"extractor: {extractor}\n"
             "---\n\n"
             f"{markdown.strip()}\n"
@@ -470,10 +474,26 @@ class JobProcessor:
         database_path = self._wiki_root / ".llm-wiki" / "catalog.sqlite3"
         with sqlite3.connect(database_path, timeout=30) as connection:
             connection.execute("PRAGMA foreign_keys=ON")
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(source_records)").fetchall()
+            }
+            if "relative_path" not in columns:
+                connection.execute("ALTER TABLE source_records ADD COLUMN relative_path TEXT")
+            if "path_base" not in columns:
+                connection.execute(
+                    "ALTER TABLE source_records ADD COLUMN path_base TEXT NOT NULL "
+                    "DEFAULT 'legacy_wiki_root'"
+                )
             connection.execute(
-                "INSERT OR REPLACE INTO source_records "
-                "(source_id, job_id, original_name, source_format, content_sha256, byte_size) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO source_records "
+                "(source_id, job_id, original_name, source_format, content_sha256, byte_size, "
+                "relative_path, path_base) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(source_id) DO UPDATE SET "
+                "job_id=excluded.job_id, original_name=excluded.original_name, "
+                "source_format=excluded.source_format, content_sha256=excluded.content_sha256, "
+                "byte_size=excluded.byte_size, relative_path=excluded.relative_path, "
+                "path_base=excluded.path_base",
                 (
                     source.source_id,
                     self._job_id,
@@ -481,6 +501,8 @@ class JobProcessor:
                     source.source_format,
                     source.content_sha256,
                     source.byte_size,
+                    source.relative_path,
+                    source.path_base,
                 ),
             )
 
@@ -554,22 +576,6 @@ def pdf_has_embedded_text(path: Path) -> bool:
         return False
     finally:
         document.close()
-
-
-def stage_pdf_sources(sources: list[AcquiredSource], input_directory: Path) -> list[Path]:
-    input_directory.mkdir(parents=True, exist_ok=True)
-    staged_sources: list[Path] = []
-    for index, source in enumerate(sources, start=1):
-        staged_path = input_directory / (
-            f"{index:04d}-{source.content_sha256[:12]}-{sanitize_filename(source.original_name)}"
-        )
-        if not staged_path.exists():
-            try:
-                os.link(source.raw_path, staged_path)
-            except OSError:
-                shutil.copyfile(source.raw_path, staged_path)
-        staged_sources.append(staged_path)
-    return staged_sources
 
 
 def read_pdf_outputs(

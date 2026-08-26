@@ -164,8 +164,9 @@ For every selected file, the worker:
 1. resolves and validates the exact path;
 2. records size, modification time, original name, and MIME/type result;
 3. computes SHA-256 from the exact bytes;
-4. copies the original into the active wiki's immutable source archive;
-5. rejects changed bytes under an existing source identifier;
+4. records the source drive root, relative path, and SHA-256 in the active wiki's
+   private catalog without copying the original;
+5. treats identical SHA-256 values as one source record and refreshes its location;
 6. reuses a validated extraction artifact when the source and configuration hashes
    match.
 
@@ -174,10 +175,10 @@ programs, links, or document-provided commands.
 
 ### 7.2 PDF
 
-Every PDF, including a digitally generated PDF with selectable text, runs through
-OpenDataLoader's full hybrid OCR/layout route on every page. The packaged worker
-uses the equivalent of a force-OCR backend and full client routing rather than an
-automatic scan-only decision.
+Every PDF runs through OpenDataLoader. A digitally generated PDF with selectable
+text uses its fast structural Markdown/JSON parser so layout and semantic structure
+are retained without the cost of image OCR. PDFs without usable embedded text use
+the full hybrid force-OCR backend.
 
 The PDF artifact contains:
 
@@ -190,10 +191,7 @@ The PDF artifact contains:
 - per-page warnings and quality measurements;
 - tool, model, language, and configuration versions.
 
-Native text is evidence, not a substitute for the required OCR/layout pass. The
-normalizer may reconcile obvious OCR character errors against native text only when
-page alignment is reliable and the original OCR result remains preserved in the
-artifact.
+Native text and parser structure remain in the extraction artifact for provenance.
 
 Encrypted PDFs enter review unless the user supplies the password for the current
 job. Passwords remain in memory and are never logged or persisted.
@@ -250,7 +248,6 @@ normal Obsidian navigation:
 
 ```text
 .llm-wiki/
-├── raw/               Immutable source copies
 ├── artifacts/         Validated extraction and AI artifacts
 ├── staging/           Candidate wiki transaction
 ├── backups/           Bounded publication snapshots
@@ -258,6 +255,9 @@ normal Obsidian navigation:
 ├── operations.jsonl   Append-only ingest and publish log
 └── catalog.sqlite3    Jobs, graph catalog, FTS index, and review state
 ```
+
+`catalog.sqlite3` stores each source SHA-256, drive root, and relative path. The
+original is referenced in place and is not duplicated inside the wiki.
 
 The application validates that `.llm-wiki/` is inside the exact configured wiki
 root and never accepts a broad drive or user-profile path as a destructive target.
@@ -456,7 +456,8 @@ machine:
 1. `Setup.exe` installs and launches without manual dependency installation.
 2. The user can create at least two isolated wiki workspaces.
 3. A mixed batch of PDF, DOCX, TXT, and MD files completes from one primary action.
-4. Every PDF page uses the configured full OpenDataLoader OCR/layout path.
+4. Every PDF page is processed by OpenDataLoader: structural extraction for
+   selectable text and the configured hybrid OCR/layout path for scanned pages.
 5. The chosen provider creates source, concept, entity, synthesis, and index pages
    with valid structured metadata and provenance.
 6. Existing concepts are linked or updated instead of duplicated in tested cases.

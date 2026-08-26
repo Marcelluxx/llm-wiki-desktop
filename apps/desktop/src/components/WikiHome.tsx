@@ -244,6 +244,7 @@ function formatElapsed(timestamp: string, now: number): string {
 
 function formatActivityDetail(detail: string, messages: Messages): string {
   return detail
+    .replaceAll("documents=", `${messages.pdfShort} `)
     .replaceAll("document=", `${messages.pdfShort} `)
     .replaceAll(" pages=", ` · ${messages.pagesShort} `)
     .replaceAll(" page=", ` · ${messages.pageShort} `)
@@ -257,6 +258,7 @@ function processingMessage(message: string, messages: Messages): string {
     "ocr.server_starting": messages.ocrStarting,
     "ocr.server_ready": messages.ocrReady,
     "ocr.document_started": messages.ocrDocumentStarted,
+    "ocr.batch_started": messages.ocrBatchStarted,
     "ocr.page_started": messages.ocrPageStarted,
     "ocr.page_completed": messages.ocrPageCompleted,
     "ocr.working": messages.ocrWorking,
@@ -265,10 +267,12 @@ function processingMessage(message: string, messages: Messages): string {
     "ocr.model_ready": messages.ocrModelReady,
     "ocr.accelerator": messages.ocrAccelerator,
     "ocr.backend_processing": messages.ocrBackendProcessing,
+    "ocr.backend_document_completed": messages.ocrBackendDocumentCompleted,
     "ocr.backend_pages": messages.ocrBackendPages,
     "ocr.backend_warning": messages.ocrBackendWarning,
     "ocr.backend_error": messages.ocrBackendError,
     "ocr.possible_stall": messages.ocrPossibleStall,
+    "ocr.gpu_runtime_missing": messages.ocrGpuRuntimeMissing,
   };
   return labels[message] ?? message;
 }

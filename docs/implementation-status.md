@@ -46,9 +46,13 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
 - Structured JSONL job logs are persisted inside each wiki, exposed in the wiki
   interface, and mirrored to the browser, Rust, and worker consoles. OCR backend
   output is retained as a separate diagnostic log.
-- PDF batches now run document-by-document and page-by-page, with truthful progress,
-  elapsed time, process-tree CPU/RAM metrics, live model/backend events, inactivity
-  warnings, cancellation, and a bounded per-page watchdog.
+- PDF batches use one OpenDataLoader invocation and one warmed hybrid backend, as
+  recommended upstream, avoiding repeated JVM startup. The UI retains elapsed time,
+  process-tree CPU/RAM metrics, live model/backend events, inactivity warnings,
+  cancellation, and a page-count-aware watchdog.
+- OCR device selection now prefers CUDA when available, reports NVIDIA hardware
+  paired with a CPU-only PyTorch runtime, and includes an optional isolated NVIDIA
+  acceleration installer for development builds.
 
 ## Validation evidence
 
@@ -59,6 +63,9 @@ Milestones 4–5 — immutable extraction and forced PDF OCR: in progress.
   rejection pass.
 - `tauri build --debug --no-bundle` produces
   `target/debug/llm-wiki-desktop.exe`; a hidden launch smoke test confirmed startup.
+- A local forced-OCR benchmark on an RTX 2070 processed the four 37-page test PDFs
+  in one 78.9-second batch. The first 15-page document absorbed model warm-up;
+  subsequent 9-, 7-, and 6-page documents reused the loaded pipeline.
 - Browser inspection confirmed unclipped first-run, empty-dashboard, create-dialog,
   settings, Italian/English expansion, and initial keyboard focus behavior.
 

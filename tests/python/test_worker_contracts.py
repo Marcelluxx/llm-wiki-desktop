@@ -20,6 +20,7 @@ from llm_wiki_engine.contracts import (
     IpcEnvelope,
 )
 from llm_wiki_engine.ingestion import (
+    build_pdf_batch_command,
     classify_ocr_log_line,
     ocr_progress,
     read_ocr_log_entries,
@@ -237,6 +238,25 @@ def test_ocr_monitor_classifies_useful_backend_activity() -> None:
         "2026 INFO Accelerator device: 'cpu'",
     )
     assert classify_ocr_log_line("HTTP Request: GET /health") is None
+    completed = classify_ocr_log_line("Finished converting document temp.pdf in 12.4 sec.")
+    assert completed is not None
+    assert completed[1] == "ocr.backend_document_completed"
+
+
+def test_pdf_ocr_uses_one_full_hybrid_batch_without_page_invocations(tmp_path: Path) -> None:
+    sources = [tmp_path / "one.pdf", tmp_path / "two.pdf"]
+    command = build_pdf_batch_command(
+        tmp_path / "opendataloader-pdf.exe",
+        sources,
+        tmp_path / "output",
+        5002,
+    )
+
+    assert command.count(str(sources[0])) == 1
+    assert command.count(str(sources[1])) == 1
+    assert "--pages" not in command
+    assert command.count("--hybrid-mode") == 1
+    assert command[command.index("--hybrid-mode") + 1] == "full"
 
 
 def test_ocr_log_reader_waits_for_complete_lines(tmp_path: Path) -> None:

@@ -19,11 +19,17 @@ application console. The complete JSONL history is kept under
 `.llm-wiki/logs/<job-id>.jsonl`; OpenDataLoader backend output is kept beside it for
 PDF diagnostics.
 
-PDFs are processed sequentially and every page advances the progress bar. During a
-long page the activity panel reports elapsed time, OCR process CPU/RAM use, model
+All selected PDFs are submitted in one OpenDataLoader call so the Java process and
+the warmed hybrid backend are reused across the complete batch. During a long OCR
+batch the activity panel reports elapsed time, process-tree CPU/RAM use, model
 downloads, and relevant backend messages. A low-activity watchdog warns after two
-minutes and a per-page safety timeout stops a genuinely stuck OCR process after 30
-minutes.
+minutes and a page-count-aware safety timeout stops a genuinely stuck batch.
+
+The worker automatically uses CUDA when the installed PyTorch runtime can access an
+NVIDIA GPU, otherwise it falls back to CPU and reports the missing acceleration in
+the application log. Developers can install the optional NVIDIA runtime with
+`scripts/enable-nvidia-acceleration.ps1`; the final installer will expose this as a
+guided setup choice.
 
 ## Architecture
 
@@ -59,6 +65,13 @@ From PowerShell, run:
 The bootstrap keeps Rust and its cache inside the ignored `.tools/` directory. It
 does not edit the global `PATH` or install Python/Java system-wide. npm and `uv` use
 the committed lockfiles.
+
+On a Windows machine with a supported NVIDIA GPU, enable local OCR acceleration
+after bootstrap:
+
+```powershell
+.\scripts\enable-nvidia-acceleration.ps1
+```
 
 ## Quality gates
 

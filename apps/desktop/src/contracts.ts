@@ -93,6 +93,7 @@ export interface WikiRegistration {
 export interface RegistrySnapshot {
   schema_version: typeof CONTRACT_VERSION;
   interface_language: "it" | "en" | null;
+  selected_provider_id?: ProviderId;
   wikis: WikiRegistration[];
 }
 
@@ -143,6 +144,12 @@ export interface ProviderOperationEvent {
   detail?: string;
   log_level?: string;
   error_code?: string;
+}
+
+export interface ProviderActionLogEvent {
+  provider_id: ProviderId;
+  level: string;
+  message: string;
 }
 
 export interface PerformanceStatus {

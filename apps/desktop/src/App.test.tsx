@@ -39,6 +39,9 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
     setInterfaceLanguage: vi
       .fn()
       .mockImplementation(async (language) => ({ ...initial, interface_language: language })),
+    setSelectedProvider: vi
+      .fn()
+      .mockImplementation(async (providerId) => ({ ...initial, selected_provider_id: providerId })),
     createWiki:
       createError !== undefined
         ? vi.fn().mockRejectedValue(createError)
@@ -54,6 +57,11 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
       device_name: null,
     }),
     listProviderStatuses: vi.fn().mockResolvedValue([]),
+    runProviderAction: vi.fn().mockResolvedValue(undefined),
+    listProviderModels: vi.fn().mockResolvedValue([]),
+    configureOpenRouter: vi.fn().mockResolvedValue(undefined),
+    configureOllama: vi.fn().mockResolvedValue(undefined),
+    pullOllamaModel: vi.fn().mockResolvedValue(undefined),
     installNvidiaAcceleration: vi.fn(),
     pickFolder: vi.fn().mockResolvedValue(null),
     pickDocuments: vi.fn().mockResolvedValue([]),
@@ -111,12 +119,18 @@ describe("App", () => {
     ]);
     render(<App client={client} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Codex.*Collegato/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Provider AI/ }));
 
     expect(await screen.findByRole("dialog", { name: "Provider AI" })).toBeInTheDocument();
-    expect(screen.getByText("Claude")).toBeInTheDocument();
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
     expect(screen.getByText("Da installare")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Installa" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Usa questo provider" }));
+    await waitFor(() => expect(client.setSelectedProvider).toHaveBeenCalledWith("codex"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Aggiorna stato" }));
+    await waitFor(() => expect(client.listProviderStatuses).toHaveBeenCalledWith(true));
   });
 
   it("selects supported documents and starts a visible import", async () => {

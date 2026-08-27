@@ -5,7 +5,10 @@ import type {
   JobLogEntry,
   JobSummary,
   PerformanceStatus,
+  ProviderActionLogEvent,
   ProviderSummary,
+  ProviderId,
+  ProviderModel,
   RegistrySnapshot,
   WikiRegistration,
   WikiSettings,
@@ -21,6 +24,7 @@ export interface WikiInput {
 export interface RegistryClient {
   getRegistry(): Promise<RegistrySnapshot>;
   setInterfaceLanguage(language: Language): Promise<RegistrySnapshot>;
+  setSelectedProvider(providerId: ProviderId): Promise<RegistrySnapshot>;
   createWiki(request: WikiInput): Promise<WikiRegistration>;
   registerWiki(request: WikiInput): Promise<WikiRegistration>;
   openWiki(wikiId: string): Promise<WikiRegistration>;
@@ -28,7 +32,16 @@ export interface RegistryClient {
   removeRegistration(wikiId: string): Promise<RegistrySnapshot>;
   getWikiSettings(wikiId: string): Promise<WikiSettings>;
   getPerformanceStatus(): Promise<PerformanceStatus>;
-  listProviderStatuses(): Promise<ProviderSummary[]>;
+  listProviderStatuses(detailed?: boolean): Promise<ProviderSummary[]>;
+  runProviderAction(
+    providerId: ProviderId,
+    action: string,
+    onEvent: (event: ProviderActionLogEvent) => void,
+  ): Promise<void>;
+  listProviderModels(providerId: ProviderId): Promise<ProviderModel[]>;
+  configureOpenRouter(apiKey: string | null, modelId: string): Promise<void>;
+  configureOllama(modelId: string): Promise<void>;
+  pullOllamaModel(modelId: string, onEvent: (event: ProviderActionLogEvent) => void): Promise<void>;
   installNvidiaAcceleration(): Promise<PerformanceStatus>;
   pickFolder(): Promise<string | null>;
   pickDocuments(): Promise<string[]>;
@@ -82,6 +95,10 @@ export const registryClient: RegistryClient = {
   async setInterfaceLanguage(language) {
     if (isTauri()) return invoke("set_interface_language", { language });
     return saveBrowserSnapshot({ ...readBrowserSnapshot(), interface_language: language });
+  },
+  async setSelectedProvider(providerId) {
+    if (isTauri()) return invoke("set_selected_provider", { providerId });
+    return saveBrowserSnapshot({ ...readBrowserSnapshot(), selected_provider_id: providerId });
   },
   async createWiki(request) {
     if (isTauri()) return invoke("create_wiki", { request });
@@ -144,9 +161,51 @@ export const registryClient: RegistryClient = {
     if (isTauri()) return invoke("get_performance_status");
     return { nvidia_present: false, cuda_enabled: false, device_name: null };
   },
-  async listProviderStatuses() {
-    if (isTauri()) return invoke("list_provider_statuses");
+  async listProviderStatuses(detailed = false) {
+    if (isTauri()) return invoke("list_provider_statuses", { detailed });
     return previewProviders();
+  },
+  async runProviderAction(providerId, action, onEvent) {
+    if (isTauri()) {
+      const channel = new Channel<ProviderActionLogEvent>();
+      channel.onmessage = onEvent;
+      return invoke("run_provider_action", { providerId, action, onEvent: channel });
+    }
+    onEvent({ provider_id: providerId, level: "info", message: "Operazione avviata" });
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    onEvent({ provider_id: providerId, level: "info", message: "Operazione completata" });
+  },
+  async listProviderModels(providerId) {
+    if (isTauri()) return invoke("list_provider_models", { providerId });
+    if (providerId === "ollama") {
+      return [{ model_id: "qwen3:4b", display_name: "qwen3:4b", local: true }];
+    }
+    return [
+      { model_id: "openai/gpt-5", display_name: "OpenAI GPT-5", local: false },
+      { model_id: "anthropic/claude-sonnet-4", display_name: "Claude Sonnet 4", local: false },
+    ];
+  },
+  async configureOpenRouter(apiKey, modelId) {
+    if (isTauri()) return invoke("configure_openrouter", { apiKey, modelId });
+    window.localStorage.setItem("llm-wiki.preview.openrouter", modelId);
+  },
+  async configureOllama(modelId) {
+    if (isTauri()) return invoke("configure_ollama", { modelId });
+    window.localStorage.setItem("llm-wiki.preview.ollama", modelId);
+  },
+  async pullOllamaModel(modelId, onEvent) {
+    if (isTauri()) {
+      const channel = new Channel<ProviderActionLogEvent>();
+      channel.onmessage = onEvent;
+      return invoke("pull_ollama_model", { modelId, onEvent: channel });
+    }
+    onEvent({
+      provider_id: "ollama",
+      level: "info",
+      message: `Download di ${modelId} avviato`,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 700));
+    onEvent({ provider_id: "ollama", level: "info", message: "Download completato" });
   },
   async installNvidiaAcceleration() {
     if (isTauri()) return invoke("install_nvidia_acceleration");

@@ -10,6 +10,7 @@ apps/desktop/src-tauri/icons/icon.icns
 
 # Rust
 target/
+target-no-console/
 
 # Python
 .venv/

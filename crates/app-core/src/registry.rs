@@ -70,6 +70,8 @@ impl RegistryError {
 pub struct RegistrySnapshot {
     pub schema_version: String,
     pub interface_language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_provider_id: Option<ProviderId>,
     pub wikis: Vec<WikiRegistration>,
 }
 
@@ -78,6 +80,7 @@ impl Default for RegistrySnapshot {
         Self {
             schema_version: CONTRACT_VERSION.to_owned(),
             interface_language: None,
+            selected_provider_id: None,
             wikis: Vec::new(),
         }
     }
@@ -124,6 +127,16 @@ impl RegistryStore {
         }
         let mut snapshot = self.snapshot()?;
         snapshot.interface_language = Some(language.to_owned());
+        self.save(&snapshot)?;
+        Ok(snapshot)
+    }
+
+    pub fn set_selected_provider(
+        &self,
+        provider_id: ProviderId,
+    ) -> Result<RegistrySnapshot, RegistryError> {
+        let mut snapshot = self.snapshot()?;
+        snapshot.selected_provider_id = Some(provider_id);
         self.save(&snapshot)?;
         Ok(snapshot)
     }

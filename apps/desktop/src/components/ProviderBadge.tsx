@@ -9,7 +9,9 @@ interface ProviderBadgeProps {
 }
 
 export function ProviderBadge({ provider, messages, onClick }: ProviderBadgeProps) {
-  const status = provider ? providerStatus(provider.status, messages) : messages.providerChecking;
+  const status = provider
+    ? `${messages.providerSelected} · ${providerStatus(provider.status, messages)}`
+    : messages.providerChoose;
   return (
     <button
       type="button"
@@ -23,7 +25,7 @@ export function ProviderBadge({ provider, messages, onClick }: ProviderBadgeProp
         <span className="status-dot" />
       )}
       <span>
-        <strong>{provider?.display_name ?? messages.aiProvider}</strong>
+        <strong>{provider?.display_name ?? messages.providerChoose}</strong>
         <small>{status}</small>
       </span>
       <span aria-hidden="true">⌄</span>

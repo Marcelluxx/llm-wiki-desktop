@@ -48,13 +48,16 @@ export function App({ client = registryClient }: AppProps) {
       .catch(() => undefined);
   }, [client]);
 
-  const loadProviders = useCallback(async () => {
-    try {
-      setProviders(await client.listProviderStatuses());
-    } catch {
-      setProviders([]);
-    }
-  }, [client]);
+  const loadProviders = useCallback(
+    async (detailed = false) => {
+      try {
+        setProviders(await client.listProviderStatuses(detailed));
+      } catch {
+        setProviders([]);
+      }
+    },
+    [client],
+  );
 
   useEffect(() => {
     void loadProviders();
@@ -162,7 +165,8 @@ export function App({ client = registryClient }: AppProps) {
           onOpen={openWiki}
           onSettings={() => setSettingsOpen(true)}
           provider={
-            providers.find((provider) => provider.status === "connected") ?? providers[0] ?? null
+            providers.find((provider) => provider.provider_id === snapshot.selected_provider_id) ??
+            null
           }
           onProvider={() => setProviderCenterOpen(true)}
         />
@@ -199,8 +203,17 @@ export function App({ client = registryClient }: AppProps) {
       {providerCenterOpen && (
         <ProviderCommandCenter
           providers={providers}
+          selectedProviderId={snapshot.selected_provider_id}
           messages={messages}
-          onRefresh={loadProviders}
+          onRefresh={() => loadProviders(true)}
+          onSelect={async (providerId) => setSnapshot(await client.setSelectedProvider(providerId))}
+          onAction={(providerId, action, onEvent) =>
+            client.runProviderAction(providerId, action, onEvent)
+          }
+          onListModels={(providerId) => client.listProviderModels(providerId)}
+          onConfigureOpenRouter={(apiKey, modelId) => client.configureOpenRouter(apiKey, modelId)}
+          onConfigureOllama={(modelId) => client.configureOllama(modelId)}
+          onPullOllamaModel={(modelId, onEvent) => client.pullOllamaModel(modelId, onEvent)}
           onClose={() => setProviderCenterOpen(false)}
         />
       )}

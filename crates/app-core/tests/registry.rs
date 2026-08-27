@@ -1,6 +1,6 @@
 use std::fs;
 
-use llm_wiki_app_core::{RegistryError, RegistryStore};
+use llm_wiki_app_core::{ProviderId, RegistryError, RegistryStore};
 use tempfile::tempdir;
 
 #[test]
@@ -80,4 +80,26 @@ fn preserves_a_stable_id_when_an_existing_wiki_is_registered_again() {
         .expect("register existing wiki");
 
     assert_eq!(registered.wiki_id, first.wiki_id);
+}
+
+#[test]
+fn persists_one_active_provider() {
+    let sandbox = tempdir().expect("temporary sandbox");
+    let store = RegistryStore::new(sandbox.path().join("app-data"), None, None);
+
+    store
+        .set_selected_provider(ProviderId::Claude)
+        .expect("select Claude");
+    assert_eq!(
+        store.snapshot().expect("snapshot").selected_provider_id,
+        Some(ProviderId::Claude)
+    );
+
+    store
+        .set_selected_provider(ProviderId::Antigravity)
+        .expect("select Antigravity");
+    assert_eq!(
+        store.snapshot().expect("snapshot").selected_provider_id,
+        Some(ProviderId::Antigravity)
+    );
 }

@@ -26,6 +26,7 @@ from llm_wiki_engine.ingestion import (
     build_pdf_batch_command,
     build_pdf_direct_batch_command,
     classify_ocr_log_line,
+    clean_extracted_text,
     ocr_progress,
     read_ocr_log_entries,
 )
@@ -423,3 +424,85 @@ def test_transaction_schema_rejects_paths_outside_the_wiki() -> None:
     )
 
     assert errors
+
+
+def test_clean_extracted_text_fixes_mojibake_symbols_and_watermarks() -> None:
+    raw_corrupted_text = (
+        "lOMoARcPSD|68300896\n"
+        "L'imprenditore \xc3\xa8 colui che esercita professionalmente un'attivit\xc3\xa0 "
+        "economica organizzata "
+        "\u00de al fine della produzione o dello scambio di beni o di servizi &gt; art. 2082 c.c.\n"
+        "messages.pdf_cover_qr_code_label\n"
+        "messages.studocu_not_sponsored_or_endorsed_by_college\n"
+        "Downloaded by Mario Rossi (mario@example.com)\n"
+        "Studocu non è sponsorizzato o supportato da alcuna università\n"
+        "\xc3\x80 \xc3\x88 \xc3\x89 \xc3\x92 \xc3\x99 \xc3\xac \xc3\xb2 \xc3\xb9 \xc3\xa9 "
+        "\xe2\x80\x99 \xe2\x80\x9c \xe2\x80\x9d \xe2\x80\x93 \xe2\x80\x94 \xc2\xb0 \xc2\xa7"
+    )
+
+    cleaned = clean_extracted_text(raw_corrupted_text)
+
+    assert "lOMoARcPSD" not in cleaned
+    assert "messages.pdf_cover" not in cleaned
+    assert "messages.studocu" not in cleaned
+    assert "Downloaded by" not in cleaned
+    assert "Studocu non" not in cleaned
+    assert "\xc3\xa8" not in cleaned
+    assert "\xc3\xa0" not in cleaned
+    assert "\u00de" not in cleaned
+    assert "&gt;" not in cleaned
+    assert (
+        "L'imprenditore è colui che esercita professionalmente un'attività economica organizzata"
+        in cleaned
+    )
+    assert (
+        "→ al fine della produzione o dello scambio di beni o di servizi > art. 2082 c.c."
+        in cleaned
+    )
+    assert 'À È É Ò Ù ì ò ù é \' " " \u2013 \u2014 \u00b0 \u00a7' in cleaned
+
+
+def test_worker_sanitizes_mojibake_during_text_extraction(tmp_path: Path) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    database = sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3")
+    database.executescript(
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY);"
+        "CREATE TABLE source_records ("
+        "source_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
+        "original_name TEXT NOT NULL, source_format TEXT NOT NULL, "
+        "content_sha256 TEXT, byte_size INTEGER);"
+        "INSERT INTO jobs VALUES ('job-clean');"
+    )
+    database.close()
+
+    source = tmp_path / "appunti-diritto.txt"
+    source.write_text(
+        "lOMoARcPSD|68300896\n"
+        "Nozione di imprenditore: L'imprenditore \xc3\xa8 colui che esercita "
+        "un'attivit\xc3\xa0 \u00de commerciale &gt; 2082 c.c.",
+        encoding="utf-8",
+    )
+
+    output_stream = StringIO()
+    assert (
+        run(
+            StringIO(json.dumps(real_job_request(wiki_root, "job-clean", [source])) + "\n"),
+            output_stream,
+        )
+        == 0
+    )
+
+    note = next((wiki_root / "sources").glob("*.md")).read_text(encoding="utf-8")
+    assert "lOMoARcPSD" not in note
+    assert "\xc3\xa8" not in note
+    assert "\xc3\xa0" not in note
+    assert "\u00de" not in note
+    assert "&gt;" not in note
+    assert "L'imprenditore è colui che esercita un'attività → commerciale > 2082 c.c." in note
+
+    artifact = next((wiki_root / ".llm-wiki" / "artifacts").glob("*/document.md")).read_text(
+        encoding="utf-8"
+    )
+    assert "L'imprenditore è colui che esercita un'attività → commerciale > 2082 c.c." in artifact

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -29,7 +30,112 @@ SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt", ".md"}
 OCR_HEARTBEAT_SECONDS = 10.0
 OCR_STALL_WARNING_SECONDS = 120.0
 OCR_BATCH_BASE_TIMEOUT_SECONDS = 1800.0
-EXTRACTION_CACHE_VERSION = "llm-wiki-extraction-v1"
+EXTRACTION_CACHE_VERSION = "llm-wiki-extraction-v2"
+
+MOJIBAKE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("\xc3\xa0", "à"),
+    ("Ã ", "à"),
+    ("\xc3\xa1", "á"),
+    ("\xc3\xa2", "â"),
+    ("\xc3\xa3", "ã"),
+    ("\xc3\xa4", "ä"),
+    ("\xc3\xa8", "è"),
+    ("\xc3\xa9", "é"),
+    ("\xc3\xaa", "ê"),
+    ("\xc3\xab", "ë"),
+    ("\xc3\xac", "ì"),
+    ("\xc3\xad", "í"),
+    ("\xc3\xae", "î"),
+    ("\xc3\xaf", "ï"),
+    ("\xc3\xb2", "ò"),
+    ("\xc3\xb3", "ó"),
+    ("\xc3\xb4", "ô"),
+    ("\xc3\xb5", "õ"),
+    ("\xc3\xb6", "ö"),
+    ("\xc3\xb9", "ù"),
+    ("\xc3\xba", "ú"),
+    ("\xc3\xbb", "û"),
+    ("\xc3\xbc", "ü"),
+    ("\xc3\x80", "À"),
+    ("\xc3\x81", "Á"),
+    ("\xc3\x82", "Â"),
+    ("\xc3\x83", "Ã"),
+    ("\xc3\x84", "Ä"),
+    ("\xc3\x88", "È"),
+    ("\xc3\x89", "É"),
+    ("\xc3\x8a", "Ê"),
+    ("\xc3\x8b", "Ë"),
+    ("\xc3\x8c", "Ì"),
+    ("\xc3\x8d", "Í"),
+    ("\xc3\x8e", "Î"),
+    ("\xc3\x8f", "Ï"),
+    ("\xc3\x92", "Ò"),
+    ("\xc3\x93", "Ó"),
+    ("\xc3\x94", "Ô"),
+    ("\xc3\x95", "Õ"),
+    ("\xc3\x96", "Ö"),
+    ("\xc3\x99", "Ù"),
+    ("\xc3\x9a", "Ú"),
+    ("\xc3\x9b", "Û"),
+    ("\xc3\x9c", "Ü"),
+    ("\xc3\xa7", "ç"),
+    ("\xc3\x87", "Ç"),
+    ("\xe2\x80\x99", "'"),
+    ("\xe2\x80\x98", "'"),
+    ("\xe2\x80\x9c", '"'),
+    ("\xe2\x80\x9d", '"'),
+    ('â€"', '"'),
+    ("\xe2\x80\x93", "\u2013"),
+    ("\xe2\x80\x94", "\u2014"),
+    ("\xe2\x80\xa6", "\u2026"),
+    ("\xe2\x82\xac", "€"),
+    ("\xc2\xb0", "°"),
+    ("\xc2\xab", "«"),
+    ("\xc2\xbb", "»"),
+    ("\xc2\xa7", "§"),
+    ("\xc2\xa9", "©"),
+    ("\xc2\xae", "®"),
+)
+
+ACADEMIC_WATERMARK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"lOMoARcPSD\|\d+", re.IGNORECASE),
+    re.compile(r"messages\.pdf_cover_[a-z0-9_]+", re.IGNORECASE),
+    re.compile(r"messages\.studocu_[a-z0-9_]+", re.IGNORECASE),
+    re.compile(r"Downloaded by [^\n\r]+", re.IGNORECASE),
+    re.compile(r"Studocu non [eè] sponsorizzato o supportato da[^\n\r]+", re.IGNORECASE),
+    re.compile(r"This document is available on Studocu[^\n\r]*", re.IGNORECASE),
+)
+
+
+def repair_mojibake(text: str) -> str:
+    """Repair common Latin-1/Windows-1252 to UTF-8 mojibake corruptions."""
+    for corrupted, fixed in MOJIBAKE_REPLACEMENTS:
+        text = text.replace(corrupted, fixed)
+    if "Ã" in text or "â€" in text:
+
+        def _replace_chunk(match: re.Match[str]) -> str:
+            chunk = match.group(0)
+            try:
+                return chunk.encode("latin-1").decode("utf-8")
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                return chunk
+
+        text = re.sub(r"[\xc2-\xf4][\x80-\xbf]+", _replace_chunk, text)
+    return text
+
+
+def clean_extracted_text(text: str) -> str:
+    """Normalize extracted text, unescape HTML, fix symbols, and strip watermarks."""
+    text = html.unescape(text)
+    text = repair_mojibake(text)
+    text = text.replace("Þ", "→")
+    text = text.replace("\uf0b7", "•")
+    text = text.replace("\uf0a7", "▪")
+    text = text.replace("\uf0d8", "➢")
+    for pattern in ACADEMIC_WATERMARK_PATTERNS:
+        text = pattern.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 class IngestionCancelled(Exception):
@@ -239,7 +345,8 @@ class JobProcessor:
             markdown = docx_to_markdown(source.raw_path)
             extractor = "python-docx"
         else:
-            markdown = source.raw_path.read_text(encoding="utf-8-sig", errors="replace")
+            raw_text = source.raw_path.read_text(encoding="utf-8-sig", errors="replace")
+            markdown = clean_extracted_text(raw_text)
             extractor = "direct-text"
         if not markdown.strip():
             raise ValueError(f"No readable content extracted from {source.original_name}")
@@ -430,9 +537,10 @@ class JobProcessor:
         *,
         semantic_json: object | None = None,
     ) -> None:
+        cleaned_markdown = clean_extracted_text(markdown)
         artifact_directory = self._wiki_root / ".llm-wiki" / "artifacts" / source.content_sha256
         artifact_directory.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(artifact_directory / "document.md", markdown)
+        atomic_write_text(artifact_directory / "document.md", cleaned_markdown)
         if semantic_json is not None:
             atomic_write_text(
                 artifact_directory / "semantic.json",
@@ -456,7 +564,7 @@ class JobProcessor:
             artifact_directory / "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         )
-        self._write_source_note(source, markdown, extractor)
+        self._write_source_note(source, cleaned_markdown, extractor)
 
     def _reuse_cached_artifact(
         self, source: AcquiredSource, extractor: str, progress: float
@@ -482,7 +590,8 @@ class JobProcessor:
             return False
         if manifest.get("semantic_json") and not (artifact_directory / "semantic.json").is_file():
             return False
-        self._write_source_note(source, markdown, extractor)
+        cleaned_markdown = clean_extracted_text(markdown)
+        self._write_source_note(source, cleaned_markdown, extractor)
         self._logger.write(
             "info",
             "source.cache_hit",
@@ -505,6 +614,7 @@ class JobProcessor:
         return hashlib.sha256(encoded).hexdigest()
 
     def _write_source_note(self, source: AcquiredSource, markdown: str, extractor: str) -> None:
+        cleaned_markdown = clean_extracted_text(markdown)
         note_name = f"{slugify(Path(source.original_name).stem)}-{source.content_sha256[:8]}.md"
         note = (
             "---\n"
@@ -514,7 +624,7 @@ class JobProcessor:
             f"source_path_base: {json.dumps(source.path_base, ensure_ascii=False)}\n"
             f"extractor: {extractor}\n"
             "---\n\n"
-            f"{markdown.strip()}\n"
+            f"{cleaned_markdown.strip()}\n"
         )
         atomic_write_text(self._wiki_root / "sources" / note_name, note)
 
@@ -609,7 +719,8 @@ def docx_to_markdown(path: Path) -> str:
         lines.append("| " + " | ".join(rows[0]) + " |")
         lines.append("| " + " | ".join("---" for _ in rows[0]) + " |")
         lines.extend("| " + " | ".join(row) + " |" for row in rows[1:])
-    return "\n\n".join(lines).strip() + "\n"
+    raw_content = "\n\n".join(lines).strip()
+    return clean_extracted_text(raw_content) + "\n"
 
 
 def available_local_port() -> int:
@@ -649,9 +760,10 @@ def read_pdf_outputs(
     markdown_path = find_pdf_output(output_directory, staged_path.stem, ".md")
     if markdown_path is None:
         raise RuntimeError(f"OpenDataLoader did not produce Markdown for {source.original_name}")
-    markdown = markdown_path.read_text(encoding="utf-8", errors="replace").strip()
-    if not markdown:
+    raw_markdown = markdown_path.read_text(encoding="utf-8", errors="replace").strip()
+    if not raw_markdown:
         raise RuntimeError(f"OpenDataLoader produced empty Markdown for {source.original_name}")
+    markdown = clean_extracted_text(raw_markdown)
     semantic_path = find_pdf_output(output_directory, staged_path.stem, ".json")
     semantic_json = (
         json.loads(semantic_path.read_text(encoding="utf-8")) if semantic_path is not None else None

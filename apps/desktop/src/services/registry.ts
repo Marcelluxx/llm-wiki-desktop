@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
+  ChatMessageRecord,
+  ChatStreamEvent,
   JobEvent,
   JobLogEntry,
   JobSummary,
@@ -53,6 +55,16 @@ export interface RegistryClient {
   ): Promise<JobSummary>;
   cancelJob(jobId: string): Promise<void>;
   readJobLog(wikiId: string, jobId: string): Promise<JobLogEntry[]>;
+  listChatMessages(wikiId: string): Promise<ChatMessageRecord[]>;
+  sendChatMessage(
+    wikiId: string,
+    message: string,
+    onEvent: (event: ChatStreamEvent) => void,
+  ): Promise<ChatMessageRecord>;
+  startWikiIngest(
+    wikiId: string,
+    onEvent: (event: ChatStreamEvent) => void,
+  ): Promise<ChatMessageRecord>;
 }
 
 const browserStorageKey = "llm-wiki.preview.registry.v1";
@@ -266,6 +278,45 @@ export const registryClient: RegistryClient = {
   async readJobLog(wikiId, jobId) {
     if (isTauri()) return invoke("read_job_log", { wikiId, jobId });
     return [];
+  },
+  async listChatMessages(wikiId) {
+    if (isTauri()) return invoke("list_chat_messages", { wikiId });
+    const stored = window.localStorage.getItem(`llm-wiki.preview.chat.${wikiId}`);
+    return stored ? (JSON.parse(stored) as ChatMessageRecord[]) : [];
+  },
+  async sendChatMessage(wikiId, message, onEvent) {
+    if (isTauri()) {
+      const channel = new Channel<ChatStreamEvent>();
+      channel.onmessage = onEvent;
+      return invoke("send_chat_message", { wikiId, message, onEvent: channel });
+    }
+    onEvent({ provider_id: "fake", kind: "status", message: "Analisi della wiki…" });
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    const record: ChatMessageRecord = {
+      message_id: crypto.randomUUID(),
+      provider_id: "fake",
+      role: "assistant",
+      content: `Risposta di anteprima basata sulla wiki: ${message}`,
+      created_at: new Date().toISOString(),
+    };
+    onEvent({ provider_id: "fake", kind: "delta", message: record.content });
+    return record;
+  },
+  async startWikiIngest(wikiId, onEvent) {
+    if (isTauri()) {
+      const channel = new Channel<ChatStreamEvent>();
+      channel.onmessage = onEvent;
+      return invoke("start_wiki_ingest", { wikiId, onEvent: channel });
+    }
+    onEvent({ provider_id: "fake", kind: "status", message: "Ingestione avviata…" });
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    return {
+      message_id: crypto.randomUUID(),
+      provider_id: "fake",
+      role: "assistant",
+      content: "Ingestione di anteprima completata.",
+      created_at: new Date().toISOString(),
+    };
   },
 };
 

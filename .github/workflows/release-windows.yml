@@ -1,0 +1,95 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.8.2"
+        required: true
+        default: "v0.8.2"
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    name: Build one-click Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12.13"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          version: "0.11.15"
+          enable-cache: true
+
+      - name: Verify release tag and synchronized versions
+        shell: pwsh
+        run: |
+          npm ci
+          npm run version:check
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          if ($tag -ne "v0.8.2") { throw "Version 0.8.2 must be released with tag v0.8.2; received $tag." }
+
+      - name: Build private Python and Java runtime
+        shell: pwsh
+        run: ./scripts/prepare-release-runtime.ps1
+
+      - name: Run quality gates
+        shell: pwsh
+        run: ./scripts/quality.ps1
+
+      - name: Build NSIS installer
+        working-directory: apps/desktop
+        run: npm run tauri -- build --config src-tauri/tauri.release.conf.json
+
+      - name: Prepare release assets and checksums
+        id: assets
+        shell: pwsh
+        run: |
+          $source = Get-ChildItem -LiteralPath "target/release/bundle/nsis" -Filter "*-setup.exe" | Select-Object -First 1
+          if ($null -eq $source) { throw "The NSIS installer was not produced." }
+          New-Item -ItemType Directory -Force -Path "release-assets" | Out-Null
+          $installer = Join-Path (Resolve-Path "release-assets").Path "LLM-Wiki-Setup.exe"
+          Copy-Item -LiteralPath $source.FullName -Destination $installer
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  LLM-Wiki-Setup.exe" | Set-Content -LiteralPath "release-assets/SHA256SUMS.txt" -Encoding ascii
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LLM-Wiki-Desktop-0.8.2-Windows-x64
+          path: release-assets/*
+          compression-level: 0
+
+      - name: Create or update the draft GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --title "LLM Wiki Desktop 0.8.2" --notes-file "docs/releases/v0.8.2.md"
+          }
+          gh release upload $tag "release-assets/LLM-Wiki-Setup.exe" "release-assets/SHA256SUMS.txt" --clobber

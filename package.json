@@ -1,20 +1,21 @@
 {
   "name": "llm-wiki-desktop-workspace",
-  "version": "0.3.1",
+  "version": "0.8.2",
   "private": true,
   "workspaces": [
     "apps/desktop"
   ],
   "scripts": {
     "build": "npm run build --workspace @llm-wiki/desktop",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "check": "npm run version:check && npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "dev": "npm run dev --workspace @llm-wiki/desktop",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
     "tauri": "npm run tauri --workspace @llm-wiki/desktop --",
     "test": "npm run test --workspace @llm-wiki/desktop",
-    "typecheck": "npm run typecheck --workspace @llm-wiki/desktop"
+    "typecheck": "npm run typecheck --workspace @llm-wiki/desktop",
+    "version:check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-version-sync.ps1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",

@@ -9,6 +9,7 @@
       "!!**/.tools",
       "!!**/.superpowers",
       "!!**/.venv",
+      "!!**/.runtime",
       "!!apps/desktop/src-tauri/gen"
     ]
   },

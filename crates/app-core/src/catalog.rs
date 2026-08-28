@@ -42,6 +42,16 @@ pub struct JobSummary {
     pub last_message: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatMessageRecord {
+    pub message_id: String,
+    pub provider_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct WikiCatalog {
     database_path: PathBuf,
@@ -134,6 +144,53 @@ impl WikiCatalog {
             .map_err(CatalogError::from)
     }
 
+    pub fn append_chat_message(
+        &self,
+        provider_id: &str,
+        role: &str,
+        content: &str,
+    ) -> Result<ChatMessageRecord, CatalogError> {
+        let message = ChatMessageRecord {
+            message_id: Uuid::new_v4().to_string(),
+            provider_id: provider_id.to_owned(),
+            role: role.to_owned(),
+            content: content.to_owned(),
+            created_at: timestamp()?,
+        };
+        self.connection()?.execute(
+            "INSERT INTO chat_messages (message_id, provider_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                message.message_id,
+                message.provider_id,
+                message.role,
+                message.content,
+                message.created_at,
+            ],
+        )?;
+        Ok(message)
+    }
+
+    pub fn list_chat_messages(&self, limit: u32) -> Result<Vec<ChatMessageRecord>, CatalogError> {
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT message_id, provider_id, role, content, created_at FROM (
+               SELECT message_id, provider_id, role, content, created_at, rowid
+               FROM chat_messages ORDER BY rowid DESC LIMIT ?1
+             ) ORDER BY rowid ASC",
+        )?;
+        let rows = statement.query_map([limit.clamp(1, 200)], |row| {
+            Ok(ChatMessageRecord {
+                message_id: row.get(0)?,
+                provider_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(CatalogError::from)
+    }
+
     fn migrate(&self) -> Result<(), CatalogError> {
         let connection = self.connection()?;
         connection.execute_batch(
@@ -178,6 +235,13 @@ impl WikiCatalog {
                job_id TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
                operation TEXT NOT NULL,
                occurred_at TEXT NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS chat_messages (
+               message_id TEXT PRIMARY KEY,
+               provider_id TEXT NOT NULL,
+               role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system')),
+               content TEXT NOT NULL,
+               created_at TEXT NOT NULL
              );",
         )?;
         ensure_column(&connection, "source_records", "relative_path", "TEXT")?;
@@ -304,5 +368,22 @@ mod tests {
         let jobs = catalog.list_jobs("wiki-1").expect("jobs");
         assert_eq!(jobs[0].state, JobState::NeedsReview);
         assert_eq!(jobs[0].last_message.as_deref(), Some("stage.interrupted"));
+    }
+
+    #[test]
+    fn persists_chat_messages_in_conversation_order() {
+        let directory = tempdir().expect("temporary wiki");
+        let catalog = WikiCatalog::open(directory.path()).expect("catalog");
+        catalog
+            .append_chat_message("codex", "user", "Prima domanda")
+            .expect("user message");
+        catalog
+            .append_chat_message("codex", "assistant", "Prima risposta")
+            .expect("assistant message");
+
+        let messages = catalog.list_chat_messages(20).expect("messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[1].content, "Prima risposta");
     }
 }

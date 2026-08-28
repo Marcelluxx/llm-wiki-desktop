@@ -178,7 +178,9 @@ def test_worker_acquires_and_extracts_real_text_and_markdown(tmp_path: Path) -> 
 
     assert responses[-1]["message_type"] == "response"
     assert responses[-1]["payload"]["processed_sources"] == 2
-    assert len(list((wiki_root / "sources").glob("*.md"))) == 2
+    source_notes = list((wiki_root / "sources").glob("*.md"))
+    assert len(source_notes) == 2
+    assert all("source_id:" not in note.read_text(encoding="utf-8") for note in source_notes)
     assert not (wiki_root / ".llm-wiki" / "raw").exists()
     with sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3") as catalog:
         stored_sources = catalog.execute(
@@ -269,6 +271,49 @@ def test_duplicate_source_updates_one_catalog_record_without_copying_original(
         )
     ]
     assert not (wiki_root / ".llm-wiki" / "raw").exists()
+
+
+def test_second_identical_run_reuses_sha256_extraction_cache(tmp_path: Path) -> None:
+    wiki_root = tmp_path / "wiki"
+    (wiki_root / ".llm-wiki").mkdir(parents=True)
+    (wiki_root / "sources").mkdir()
+    database = sqlite3.connect(wiki_root / ".llm-wiki" / "catalog.sqlite3")
+    database.executescript(
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY);"
+        "CREATE TABLE source_records ("
+        "source_id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(job_id), "
+        "original_name TEXT NOT NULL, source_format TEXT NOT NULL, "
+        "content_sha256 TEXT, byte_size INTEGER);"
+        "INSERT INTO jobs VALUES ('job-cache-first');"
+        "INSERT INTO jobs VALUES ('job-cache-second');"
+    )
+    database.close()
+    source = tmp_path / "cache.md"
+    source.write_text("# Contenuto stabile", encoding="utf-8")
+
+    first_output = StringIO()
+    assert (
+        run(
+            StringIO(json.dumps(real_job_request(wiki_root, "job-cache-first", [source])) + "\n"),
+            first_output,
+        )
+        == 0
+    )
+    artifact = next((wiki_root / ".llm-wiki" / "artifacts").glob("*/document.md"))
+    first_modified = artifact.stat().st_mtime_ns
+
+    second_output = StringIO()
+    assert (
+        run(
+            StringIO(json.dumps(real_job_request(wiki_root, "job-cache-second", [source])) + "\n"),
+            second_output,
+        )
+        == 0
+    )
+    responses = [json.loads(line) for line in second_output.getvalue().splitlines()]
+
+    assert artifact.stat().st_mtime_ns == first_modified
+    assert any(response["payload"].get("message") == "source.cache_hit" for response in responses)
 
 
 def test_worker_persists_a_visible_error_log(tmp_path: Path) -> None:

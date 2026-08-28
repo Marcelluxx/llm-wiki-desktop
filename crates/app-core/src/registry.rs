@@ -20,6 +20,10 @@ const VISIBLE_DIRECTORIES: &[&str] = &[
     "attachments",
 ];
 const INTERNAL_DIRECTORIES: &[&str] = &["raw", "artifacts", "staging", "backups"];
+const DEFAULT_WIKI_AGENTS: &str = include_str!("../../../prompts/knowledge-ingest.md");
+const AGENTS_VERSION_MARKER: &str = "<!-- llm-wiki-agents-version: 2 -->";
+const OBSIDIAN_INTERNAL_FILTER: &str = ".llm-wiki/";
+const OBSIDIAN_GRAPH_FILTER: &str = "-path:\".llm-wiki\"";
 
 #[derive(Debug, thiserror::Error)]
 pub enum RegistryError {
@@ -169,6 +173,9 @@ impl RegistryStore {
         wiki.last_opened_at = timestamp()?;
         let result = wiki.clone();
         self.save(&snapshot)?;
+        ensure_wiki_agents_file(Path::new(&result.canonical_root))?;
+        ensure_obsidian_visibility(Path::new(&result.canonical_root))?;
+        remove_legacy_source_properties(Path::new(&result.canonical_root))?;
         Ok(result)
     }
 
@@ -342,6 +349,9 @@ fn create_wiki_skeleton(
         fs::write(index_path, format!("# {title}\n\n"))?;
     }
 
+    ensure_wiki_agents_file(root)?;
+    ensure_obsidian_visibility(root)?;
+
     let settings_path = internal_root.join("settings.json");
     if !settings_path.exists() {
         let settings = WikiSettings {
@@ -351,13 +361,208 @@ fn create_wiki_skeleton(
             note_language: note_language.to_owned(),
             provider_id: ProviderId::Fake,
             model_id: None,
-            use_global_provider: false,
+            use_global_provider: true,
             ocr_language: "ita+eng".to_owned(),
             open_in_obsidian_after_publish: false,
         };
         fs::write(settings_path, serde_json::to_vec_pretty(&settings)?)?;
     }
     Ok(())
+}
+
+pub fn ensure_wiki_agents_file(root: &Path) -> Result<(), RegistryError> {
+    let agents_path = root.join("AGENTS.md");
+    if agents_path.exists() {
+        let metadata = fs::symlink_metadata(&agents_path)?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(RegistryError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "AGENTS.md must be a regular file inside the wiki root",
+            )));
+        }
+        let current = fs::read_to_string(&agents_path)?;
+        let migrated = migrate_legacy_agents_rules(&current);
+        if migrated != current {
+            fs::write(&agents_path, migrated)?;
+        }
+        return Ok(());
+    }
+    fs::write(agents_path, DEFAULT_WIKI_AGENTS)?;
+    Ok(())
+}
+
+fn migrate_legacy_agents_rules(current: &str) -> String {
+    if !current.starts_with("# LLM Wiki knowledge-ingest blueprint")
+        || !current.contains("source_ids: [\"sha256 when evidence-backed\"]")
+    {
+        return current.to_owned();
+    }
+    let migrated = current
+        .replace(
+            "source_ids: [\"sha256 when evidence-backed\"]\n",
+            "",
+        )
+        .replace(
+            "- Source notes must retain `source_id`, original filename, relative locator,\n  extractor, and verified provenance already written by the application.",
+            "- Keep original filename, relative locator, extractor, and readable links to source\n  notes as provenance.\n- Do not expose `source_id`, `source_ids`, SHA-256 values, or cache identities in\n  user-visible YAML properties or note bodies. During ingest, remove legacy\n  `source_id` and `source_ids` properties from existing published Markdown notes.",
+        )
+        .replace(
+            "- sources processed and cache identities used;",
+            "- sources processed;",
+        );
+    format!("{AGENTS_VERSION_MARKER}\n{migrated}")
+}
+
+pub fn ensure_obsidian_visibility(root: &Path) -> Result<(), RegistryError> {
+    let obsidian_root = root.join(".obsidian");
+    fs::create_dir_all(&obsidian_root)?;
+
+    let app_path = obsidian_root.join("app.json");
+    let mut app = read_json_object_or_default(&app_path)?;
+    let filters = app
+        .entry("userIgnoreFilters".to_owned())
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    let filters = filters.as_array_mut().ok_or_else(|| {
+        RegistryError::Json(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            ".obsidian/app.json userIgnoreFilters must be an array",
+        )))
+    })?;
+    if !filters
+        .iter()
+        .any(|value| value.as_str() == Some(OBSIDIAN_INTERNAL_FILTER))
+    {
+        filters.push(serde_json::Value::String(
+            OBSIDIAN_INTERNAL_FILTER.to_owned(),
+        ));
+    }
+    fs::write(&app_path, serde_json::to_vec_pretty(&app)?)?;
+
+    let graph_path = obsidian_root.join("graph.json");
+    let mut graph = read_json_object_or_default(&graph_path)?;
+    let search = graph
+        .get("search")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if !search.contains(OBSIDIAN_GRAPH_FILTER) {
+        graph.insert(
+            "search".to_owned(),
+            serde_json::Value::String(
+                format!("{search} {OBSIDIAN_GRAPH_FILTER}")
+                    .trim()
+                    .to_owned(),
+            ),
+        );
+    }
+    graph.insert("showAttachments".to_owned(), serde_json::Value::Bool(false));
+    fs::write(graph_path, serde_json::to_vec_pretty(&graph)?)?;
+    Ok(())
+}
+
+pub fn remove_legacy_source_properties(root: &Path) -> Result<usize, RegistryError> {
+    let mut updated = 0;
+    let index = root.join("index.md");
+    if index.is_file() && strip_legacy_source_properties(&index)? {
+        updated += 1;
+    }
+    for directory in VISIBLE_DIRECTORIES {
+        remove_legacy_source_properties_in(&root.join(directory), &mut updated)?;
+    }
+    Ok(updated)
+}
+
+fn remove_legacy_source_properties_in(
+    directory: &Path,
+    updated: &mut usize,
+) -> Result<(), RegistryError> {
+    if !directory.is_dir() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_dir() {
+            remove_legacy_source_properties_in(&path, updated)?;
+        } else if file_type.is_file()
+            && path.extension().and_then(|value| value.to_str()) == Some("md")
+            && strip_legacy_source_properties(&path)?
+        {
+            *updated += 1;
+        }
+    }
+    Ok(())
+}
+
+fn strip_legacy_source_properties(path: &Path) -> Result<bool, RegistryError> {
+    let current = fs::read_to_string(path)?;
+    let mut lines = current.split_inclusive('\n');
+    let Some(first) = lines.next() else {
+        return Ok(false);
+    };
+    if first.trim_end_matches(['\r', '\n']) != "---" {
+        return Ok(false);
+    }
+
+    let mut output = String::with_capacity(current.len());
+    output.push_str(first);
+    let mut changed = false;
+    let mut skipping_source_ids_list = false;
+    let mut frontmatter_open = true;
+
+    for line in lines {
+        if !frontmatter_open {
+            output.push_str(line);
+            continue;
+        }
+        let value = line.trim_end_matches(['\r', '\n']);
+        let trimmed = value.trim_start();
+
+        if skipping_source_ids_list {
+            let is_continuation = value.is_empty()
+                || value.chars().next().is_some_and(char::is_whitespace)
+                || trimmed.starts_with("- ");
+            if is_continuation {
+                continue;
+            }
+            skipping_source_ids_list = false;
+        }
+
+        if value == "---" {
+            frontmatter_open = false;
+            output.push_str(line);
+        } else if let Some(remainder) = value.strip_prefix("source_ids:") {
+            changed = true;
+            skipping_source_ids_list = remainder.trim().is_empty();
+        } else if value.starts_with("source_id:") {
+            changed = true;
+        } else {
+            output.push_str(line);
+        }
+    }
+
+    if changed {
+        fs::write(path, output)?;
+    }
+    Ok(changed)
+}
+
+fn read_json_object_or_default(
+    path: &Path,
+) -> Result<serde_json::Map<String, serde_json::Value>, RegistryError> {
+    if !path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+    value.as_object().cloned().ok_or_else(|| {
+        RegistryError::Json(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Obsidian configuration must contain a JSON object",
+        )))
+    })
 }
 
 fn existing_wiki_id(root: &Path) -> Result<Option<String>, RegistryError> {

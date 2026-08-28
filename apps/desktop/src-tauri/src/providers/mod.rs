@@ -109,7 +109,7 @@ fn missing_cli(
     }
 }
 
-fn find_executable_fast(name: &str) -> Option<PathBuf> {
+pub(crate) fn find_executable_fast(name: &str) -> Option<PathBuf> {
     let extensions = ["exe", "cmd", "bat"];
     let from_path = std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path).find_map(|folder| {

@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
-import type { JobEvent, JobLogEntry, JobSummary, WikiRegistration } from "../contracts";
+import type {
+  JobEvent,
+  JobLogEntry,
+  JobSummary,
+  ProviderSummary,
+  WikiRegistration,
+} from "../contracts";
 import type { Messages } from "../i18n";
 import { formatAppError } from "../i18n";
 import type { RegistryClient } from "../services/registry";
+import { WikiChat } from "./WikiChat";
 
 interface WikiHomeProps {
   wiki: WikiRegistration;
   messages: Messages;
   client: RegistryClient;
+  provider: ProviderSummary | null;
+  onProvider(): void;
   onBack(): void;
   onSettings(): void;
 }
@@ -20,7 +29,15 @@ interface QueuedDocument {
   status: QueueStatus;
 }
 
-export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHomeProps) {
+export function WikiHome({
+  wiki,
+  messages,
+  client,
+  provider,
+  onProvider,
+  onBack,
+  onSettings,
+}: WikiHomeProps) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [documents, setDocuments] = useState<QueuedDocument[]>([]);
   const [processingPaths, setProcessingPaths] = useState<string[]>([]);
@@ -33,6 +50,9 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   const [cancelling, setCancelling] = useState(false);
   const activeJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(job.state));
   const queuedDocuments = documents.filter((document) => document.status === "queued");
+  const ingestAvailable =
+    documents.some((document) => document.status === "completed") ||
+    jobs.some((job) => job.state === "completed");
 
   useEffect(() => {
     void client
@@ -179,7 +199,7 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
   }
 
   return (
-    <main className="app-main" id="main-content">
+    <main className="app-main wiki-page" id="main-content">
       <nav className="wiki-nav" aria-label={messages.yourWikis}>
         <button type="button" className="text-button" onClick={onBack}>
           <span aria-hidden="true">←</span> {messages.back}
@@ -199,137 +219,150 @@ export function WikiHome({ wiki, messages, client, onBack, onSettings }: WikiHom
           <p className="path-copy">{wiki.canonical_root}</p>
         </div>
       </header>
-      <section className="empty-state wiki-ready" aria-labelledby="wiki-ready-title">
-        <div className="ready-check" aria-hidden="true">
-          ✓
-        </div>
-        <h2 id="wiki-ready-title">{messages.emptyWiki}</h2>
-        <p>{activeJob ? messages.importRunning : messages.emptyWikiHint}</p>
-        {error && (
-          <div className="error-banner" role="alert">
-            {error}
+      <div className="wiki-workspace">
+        <section
+          className="empty-state wiki-ready wiki-document-panel"
+          aria-labelledby="wiki-ready-title"
+        >
+          <div className="ready-check" aria-hidden="true">
+            ✓
           </div>
-        )}
-        {documents.length > 0 && (
-          <section className="document-queue" aria-label={messages.documentsInQueue}>
-            <strong>
-              {messages.selectedDocuments.replace("{count}", String(documents.length))}
-            </strong>
-            <ul>
-              {documents.map((document) => (
-                <li key={document.path} title={document.path} data-status={document.status}>
-                  <span
-                    className={`document-icon document-icon--${fileKind(document.name)}`}
-                    aria-hidden="true"
-                  >
-                    {fileExtension(document.name)}
-                  </span>
-                  <span className="document-name">{document.name}</span>
-                  <small>{queueStatusLabel(document.status, messages)}</small>
-                  {document.status === "queued" && (
-                    <button
-                      type="button"
-                      className="queue-remove-button"
-                      onClick={() => removeDocument(document.path)}
-                      aria-label={`${messages.removeDocument}: ${document.name}`}
-                    >
-                      ×
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {activeJob && (
-          <div className="job-progress" role="status" aria-live="polite">
-            <div className="job-progress__labels">
-              <strong>{stageLabel(activeJob.state, messages)}</strong>
-              <span>{Math.round(activeJob.stage_progress * 100)}%</span>
+          <h2 id="wiki-ready-title">{messages.emptyWiki}</h2>
+          <p>{activeJob ? messages.importRunning : messages.emptyWikiHint}</p>
+          {error && (
+            <div className="error-banner" role="alert">
+              {error}
             </div>
-            <progress max="1" value={activeJob.stage_progress} />
-            <div className="activity-card">
-              <div>
-                <small>{messages.currentActivity}</small>
-                <strong>
-                  {currentActivity
-                    ? processingMessage(currentActivity.message, messages)
-                    : stageLabel(activeJob.state, messages)}
-                </strong>
+          )}
+          {documents.length > 0 && (
+            <section className="document-queue" aria-label={messages.documentsInQueue}>
+              <strong>
+                {messages.selectedDocuments.replace("{count}", String(documents.length))}
+              </strong>
+              <ul>
+                {documents.map((document) => (
+                  <li key={document.path} title={document.path} data-status={document.status}>
+                    <span
+                      className={`document-icon document-icon--${fileKind(document.name)}`}
+                      aria-hidden="true"
+                    >
+                      {fileExtension(document.name)}
+                    </span>
+                    <span className="document-name">{document.name}</span>
+                    <small>{queueStatusLabel(document.status, messages)}</small>
+                    {document.status === "queued" && (
+                      <button
+                        type="button"
+                        className="queue-remove-button"
+                        onClick={() => removeDocument(document.path)}
+                        aria-label={`${messages.removeDocument}: ${document.name}`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {activeJob && (
+            <div className="job-progress" role="status" aria-live="polite">
+              <div className="job-progress__labels">
+                <strong>{stageLabel(activeJob.state, messages)}</strong>
+                <span>{Math.round(activeJob.stage_progress * 100)}%</span>
               </div>
-              <span>
-                {messages.elapsedTime}: {formatElapsed(activeJob.created_at, clock)}
-              </span>
-              {currentActivity?.source && <code>{currentActivity.source}</code>}
-              {currentActivity?.detail && (
-                <code>{formatActivityDetail(currentActivity.detail, messages)}</code>
+              <progress max="1" value={activeJob.stage_progress} />
+              <div className="activity-card">
+                <div>
+                  <small>{messages.currentActivity}</small>
+                  <strong>
+                    {currentActivity
+                      ? processingMessage(currentActivity.message, messages)
+                      : stageLabel(activeJob.state, messages)}
+                  </strong>
+                </div>
+                <span>
+                  {messages.elapsedTime}: {formatElapsed(activeJob.created_at, clock)}
+                </span>
+                {currentActivity?.source && <code>{currentActivity.source}</code>}
+                {currentActivity?.detail && (
+                  <code>{formatActivityDetail(currentActivity.detail, messages)}</code>
+                )}
+              </div>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={cancelActiveJob}
+                disabled={cancelling}
+              >
+                {cancelling ? messages.stoppingImport : messages.cancelImport}
+              </button>
+            </div>
+          )}
+          <div className="import-actions">
+            <button type="button" className="secondary-button" onClick={addDocuments}>
+              {messages.addDocuments}
+            </button>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={startQueuedImport}
+              disabled={Boolean(activeJob) || queuedDocuments.length === 0}
+            >
+              {messages.startImport.replace("{count}", String(queuedDocuments.length))}
+            </button>
+          </div>
+          <small>{messages.supportedDocuments}</small>
+          {selectedJobId && (
+            <div className="log-area">
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => setLogsOpen((value) => !value)}
+                aria-expanded={logsOpen}
+              >
+                {logsOpen ? messages.hideLogs : messages.showLogs}
+              </button>
+              {logsOpen && (
+                <section className="log-console" aria-label={messages.processingLogs}>
+                  <div className="log-console__header">
+                    <strong>{messages.processingLogs}</strong>
+                    <span>{logs.length}</span>
+                  </div>
+                  {logs.length === 0 ? (
+                    <p>{messages.noLogs}</p>
+                  ) : (
+                    <ol>
+                      {logs.map((entry) => (
+                        <li
+                          key={`${entry.timestamp}-${entry.level}-${entry.message}-${entry.source ?? ""}-${entry.detail ?? ""}`}
+                          data-level={entry.level}
+                        >
+                          <time>{formatLogTime(entry.timestamp)}</time>
+                          <span>{entry.level.toUpperCase()}</span>
+                          <code>
+                            {processingMessage(entry.message, messages)}
+                            {entry.source ? ` · ${entry.source}` : ""}
+                            {entry.detail ? ` · ${entry.detail}` : ""}
+                          </code>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </section>
               )}
             </div>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={cancelActiveJob}
-              disabled={cancelling}
-            >
-              {cancelling ? messages.stoppingImport : messages.cancelImport}
-            </button>
-          </div>
-        )}
-        <div className="import-actions">
-          <button type="button" className="secondary-button" onClick={addDocuments}>
-            {messages.addDocuments}
-          </button>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={startQueuedImport}
-            disabled={Boolean(activeJob) || queuedDocuments.length === 0}
-          >
-            {messages.startImport.replace("{count}", String(queuedDocuments.length))}
-          </button>
-        </div>
-        <small>{messages.supportedDocuments}</small>
-        {selectedJobId && (
-          <div className="log-area">
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => setLogsOpen((value) => !value)}
-              aria-expanded={logsOpen}
-            >
-              {logsOpen ? messages.hideLogs : messages.showLogs}
-            </button>
-            {logsOpen && (
-              <section className="log-console" aria-label={messages.processingLogs}>
-                <div className="log-console__header">
-                  <strong>{messages.processingLogs}</strong>
-                  <span>{logs.length}</span>
-                </div>
-                {logs.length === 0 ? (
-                  <p>{messages.noLogs}</p>
-                ) : (
-                  <ol>
-                    {logs.map((entry) => (
-                      <li
-                        key={`${entry.timestamp}-${entry.level}-${entry.message}-${entry.source ?? ""}-${entry.detail ?? ""}`}
-                        data-level={entry.level}
-                      >
-                        <time>{formatLogTime(entry.timestamp)}</time>
-                        <span>{entry.level.toUpperCase()}</span>
-                        <code>
-                          {processingMessage(entry.message, messages)}
-                          {entry.source ? ` · ${entry.source}` : ""}
-                          {entry.detail ? ` · ${entry.detail}` : ""}
-                        </code>
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </section>
-            )}
-          </div>
-        )}
-      </section>
+          )}
+        </section>
+        <WikiChat
+          wikiId={wiki.wiki_id}
+          provider={provider}
+          ingestAvailable={ingestAvailable}
+          messages={messages}
+          client={client}
+          onProvider={onProvider}
+        />
+      </div>
     </main>
   );
 }
@@ -386,6 +419,7 @@ function processingMessage(message: string, messages: Messages): string {
     "pdf.ocr_required": messages.pdfOcrRequired,
     "pdf.direct_batch_started": messages.pdfDirectBatchStarted,
     "source.text_extracted": messages.sourceTextExtracted,
+    "source.cache_hit": messages.sourceCacheHit,
   };
   return labels[message] ?? message;
 }

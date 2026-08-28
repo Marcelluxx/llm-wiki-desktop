@@ -153,6 +153,11 @@ export function App({ client = registryClient }: AppProps) {
           wiki={currentWiki}
           messages={messages}
           client={client}
+          provider={
+            providers.find((provider) => provider.provider_id === snapshot.selected_provider_id) ??
+            null
+          }
+          onProvider={() => setProviderCenterOpen(true)}
           onBack={() => setCurrentWiki(null)}
           onSettings={() => setSettingsOpen(true)}
         />

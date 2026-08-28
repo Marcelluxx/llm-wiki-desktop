@@ -69,6 +69,9 @@ function fakeClient(initial: RegistrySnapshot, createError?: unknown): RegistryC
     startImport: vi.fn(),
     cancelJob: vi.fn(),
     readJobLog: vi.fn().mockResolvedValue([]),
+    listChatMessages: vi.fn().mockResolvedValue([]),
+    sendChatMessage: vi.fn(),
+    startWikiIngest: vi.fn(),
   };
 }
 
@@ -96,6 +99,112 @@ describe("App", () => {
 
     expect(await screen.findByText("Questa wiki è pronta")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ricerca personale" })).toBeInTheDocument();
+  });
+
+  it("inherits the global provider and exposes wiki chat and ingest", async () => {
+    const client = fakeClient({ ...snapshot([wiki]), selected_provider_id: "codex" });
+    vi.mocked(client.listProviderStatuses).mockResolvedValue([
+      {
+        provider_id: "codex",
+        display_name: "Codex",
+        transport: "cli",
+        status: "connected",
+        capabilities: ["structured_output"],
+      },
+    ]);
+    vi.mocked(client.listJobs).mockResolvedValue([{ ...queuedJob, state: "completed" }]);
+    vi.mocked(client.sendChatMessage).mockResolvedValue({
+      message_id: "assistant-1",
+      provider_id: "codex",
+      role: "assistant",
+      content: "Risposta basata sulla wiki",
+      created_at: "2026-08-27T10:00:00Z",
+    });
+    vi.mocked(client.startWikiIngest).mockResolvedValue({
+      message_id: "ingest-1",
+      provider_id: "codex",
+      role: "assistant",
+      content: "Ingestione completata",
+      created_at: "2026-08-27T10:01:00Z",
+    });
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
+    expect(
+      await screen.findByRole("heading", { name: "Chat con la tua conoscenza" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Codex/ })).toBeInTheDocument();
+    const expandChat = screen.getByRole("button", { name: /Espandi chat/ });
+    fireEvent.click(expandChat);
+    expect(expandChat.closest("aside")).toHaveClass("wiki-chat--expanded");
+    expect(screen.getByRole("button", { name: /Riduci chat/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Riduci chat/ }));
+
+    fireEvent.change(screen.getByPlaceholderText("Chiedi qualcosa sui documenti della wiki…"), {
+      target: { value: "Riassumi i concetti principali" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Invia messaggio" }));
+    await waitFor(() =>
+      expect(client.sendChatMessage).toHaveBeenCalledWith(
+        wiki.wiki_id,
+        "Riassumi i concetti principali",
+        expect.any(Function),
+      ),
+    );
+    expect(await screen.findByText("Risposta basata sulla wiki")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Ingest" }));
+    await waitFor(() =>
+      expect(client.startWikiIngest).toHaveBeenCalledWith(wiki.wiki_id, expect.any(Function)),
+    );
+  });
+
+  it("shows the provider failure reason and automatically opens diagnostics", async () => {
+    const client = fakeClient({ ...snapshot([wiki]), selected_provider_id: "antigravity" });
+    vi.mocked(client.listProviderStatuses).mockResolvedValue([
+      {
+        provider_id: "antigravity",
+        display_name: "Antigravity",
+        transport: "cli",
+        status: "connected",
+        capabilities: ["structured_output"],
+      },
+    ]);
+    vi.mocked(client.sendChatMessage).mockImplementation(async (_wikiId, _message, onEvent) => {
+      onEvent({
+        provider_id: "antigravity",
+        kind: "error",
+        message: "[provider_cli_incompatible] Il protocollo della CLI non è compatibile.",
+      });
+      throw {
+        code: "provider_cli_incompatible",
+        message: "Antigravity non ha completato la richiesta: protocollo CLI incompatibile.",
+      };
+    });
+    render(<App client={client} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Apri/ }));
+    fireEvent.change(
+      await screen.findByPlaceholderText("Chiedi qualcosa sui documenti della wiki…"),
+      {
+        target: { value: "Test collegamento" },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Invia messaggio" }));
+
+    expect(
+      await screen.findByText(
+        "Antigravity non ha completato la richiesta: protocollo CLI incompatibile.",
+      ),
+    ).toBeInTheDocument();
+    expect(await screen.findByText(/\[provider_cli_incompatible\]/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Nascondi flusso CLI/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   it("shows the provider badge and opens the provider command center", async () => {

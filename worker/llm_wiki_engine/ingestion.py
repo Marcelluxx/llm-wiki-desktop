@@ -29,6 +29,7 @@ SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt", ".md"}
 OCR_HEARTBEAT_SECONDS = 10.0
 OCR_STALL_WARNING_SECONDS = 120.0
 OCR_BATCH_BASE_TIMEOUT_SECONDS = 1800.0
+EXTRACTION_CACHE_VERSION = "llm-wiki-extraction-v1"
 
 
 class IngestionCancelled(Exception):
@@ -125,7 +126,9 @@ class JobProcessor:
         processed = 0
         for index, source in enumerate(direct_sources, start=1):
             progress = 0.35 + (0.35 * index / max(len(acquired), 1))
-            self._extract_direct(source, progress)
+            extractor = "python-docx" if source.source_format == "docx" else "direct-text"
+            if not self._reuse_cached_artifact(source, extractor, progress):
+                self._extract_direct(source, progress)
             processed += 1
         if pdf_sources:
             digital_pdfs: list[AcquiredSource] = []
@@ -143,9 +146,25 @@ class JobProcessor:
                     source=source.original_name,
                 )
             if digital_pdfs:
-                self._extract_digital_pdfs(digital_pdfs, 0.72)
+                digital_pdfs = [
+                    source
+                    for source in digital_pdfs
+                    if not self._reuse_cached_artifact(
+                        source, "opendataloader-pdf-structured-text", 0.72
+                    )
+                ]
+                if digital_pdfs:
+                    self._extract_digital_pdfs(digital_pdfs, 0.72)
             if scanned_pdfs:
-                self._extract_ocr_pdfs(scanned_pdfs, 0.76)
+                scanned_pdfs = [
+                    source
+                    for source in scanned_pdfs
+                    if not self._reuse_cached_artifact(
+                        source, "opendataloader-pdf-hybrid-force-ocr", 0.76
+                    )
+                ]
+                if scanned_pdfs:
+                    self._extract_ocr_pdfs(scanned_pdfs, 0.76)
             processed += len(pdf_sources)
 
         self._validate(acquired)
@@ -237,11 +256,11 @@ class JobProcessor:
     def _extract_digital_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
         """Extract selectable PDF content with OpenDataLoader's fast structural parser."""
         self._check_cancelled()
-        job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
+        job_directory = self._wiki_root / ".llm-wiki" / "staging" / "jobs" / self._job_id
         staged_sources = [source.raw_path for source in sources]
         output_directory = job_directory / "digital-pdf-output"
         output_directory.mkdir(parents=True, exist_ok=True)
-        client_executable = Path(sys.executable).with_name("opendataloader-pdf.exe")
+        client_executable = python_console_script("opendataloader-pdf.exe")
         if not client_executable.is_file():
             raise RuntimeError("OpenDataLoader PDF executable is not installed")
         page_counts = [pdf_page_count(path) for path in staged_sources]
@@ -288,7 +307,7 @@ class JobProcessor:
 
     def _extract_ocr_pdfs(self, sources: list[AcquiredSource], progress: float) -> None:
         self._check_cancelled()
-        job_directory = self._wiki_root / ".llm-wiki" / "artifacts" / self._job_id
+        job_directory = self._wiki_root / ".llm-wiki" / "staging" / "jobs" / self._job_id
         output_directory = job_directory / "pdf-output"
         output_directory.mkdir(parents=True, exist_ok=True)
         staged_sources = [source.raw_path for source in sources]
@@ -298,8 +317,8 @@ class JobProcessor:
             raise ValueError("The selected PDFs contain no pages")
         port = available_local_port()
         server_log_path = self._logger.path.with_name(f"{self._job_id}-ocr-server.log")
-        server_executable = Path(sys.executable).with_name("opendataloader-pdf-hybrid.exe")
-        client_executable = Path(sys.executable).with_name("opendataloader-pdf.exe")
+        server_executable = python_console_script("opendataloader-pdf-hybrid.exe")
+        client_executable = python_console_script("opendataloader-pdf.exe")
         if not server_executable.is_file() or not client_executable.is_file():
             raise RuntimeError("OpenDataLoader hybrid executables are not installed")
 
@@ -433,16 +452,66 @@ class JobProcessor:
             "relative_path": source.relative_path,
             "path_base": source.path_base,
             "extractor": extractor,
+            "cache_identity": self._cache_identity(source, extractor),
+            "cache_version": EXTRACTION_CACHE_VERSION,
             "semantic_json": semantic_json is not None,
         }
         atomic_write_text(
             artifact_directory / "manifest.json",
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         )
+        self._write_source_note(source, markdown, extractor)
+
+    def _reuse_cached_artifact(
+        self, source: AcquiredSource, extractor: str, progress: float
+    ) -> bool:
+        artifact_directory = self._wiki_root / ".llm-wiki" / "artifacts" / source.content_sha256
+        manifest_path = artifact_directory / "manifest.json"
+        document_path = artifact_directory / "document.md"
+        if not manifest_path.is_file() or not document_path.is_file():
+            return False
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            markdown = document_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return False
+        if (
+            manifest.get("content_sha256") != source.content_sha256
+            or manifest.get("byte_size") != source.byte_size
+            or manifest.get("source_format") != source.source_format
+            or manifest.get("extractor") != extractor
+            or manifest.get("cache_identity") != self._cache_identity(source, extractor)
+            or not markdown.strip()
+        ):
+            return False
+        if manifest.get("semantic_json") and not (artifact_directory / "semantic.json").is_file():
+            return False
+        self._write_source_note(source, markdown, extractor)
+        self._logger.write(
+            "info",
+            "source.cache_hit",
+            state=JobState.EXTRACTING,
+            progress=progress,
+            source=source.original_name,
+            detail=f"sha256={source.content_sha256[:12]} extractor={extractor}",
+        )
+        return True
+
+    def _cache_identity(self, source: AcquiredSource, extractor: str) -> str:
+        configuration = {
+            "cache_version": EXTRACTION_CACHE_VERSION,
+            "content_sha256": source.content_sha256,
+            "source_format": source.source_format,
+            "extractor": extractor,
+            "ocr_language": self._ocr_language if "ocr" in extractor else None,
+        }
+        encoded = json.dumps(configuration, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+
+    def _write_source_note(self, source: AcquiredSource, markdown: str, extractor: str) -> None:
         note_name = f"{slugify(Path(source.original_name).stem)}-{source.content_sha256[:8]}.md"
         note = (
             "---\n"
-            f"source_id: {source.source_id}\n"
             f"original_name: {json.dumps(source.original_name, ensure_ascii=False)}\n"
             f"source_format: {source.source_format}\n"
             f"source_relative_path: {json.dumps(source.relative_path, ensure_ascii=False)}\n"
@@ -911,6 +980,12 @@ def terminate_process(process: subprocess.Popen[bytes]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(timeout=5)
+
+
+def python_console_script(name: str) -> Path:
+    executable = Path(sys.executable)
+    candidates = (executable.with_name(name), executable.parent / "Scripts" / name)
+    return next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
 
 
 def find_pdf_output(directory: Path, source_stem: str, suffix: str) -> Path | None:

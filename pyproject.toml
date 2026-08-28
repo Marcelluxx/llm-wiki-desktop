@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-wiki-engine"
-version = "0.3.1"
+version = "0.8.2"
 description = "Local extraction and knowledge-base ingest worker for LLM Wiki Desktop"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"

@@ -152,6 +152,20 @@ export interface ProviderActionLogEvent {
   message: string;
 }
 
+export interface ChatStreamEvent {
+  provider_id: ProviderId;
+  kind: "status" | "delta" | "message" | "trace" | "stderr" | "warning" | "error" | "completed";
+  message: string;
+}
+
+export interface ChatMessageRecord {
+  message_id: string;
+  provider_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+}
+
 export interface PerformanceStatus {
   nvidia_present: boolean;
   cuda_enabled: boolean;

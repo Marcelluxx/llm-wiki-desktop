@@ -69,6 +69,7 @@ const messages = {
     pdfOcrRequired: "PDF senza testo selezionabile: OCR necessario",
     pdfDirectBatchStarted: "Estrazione strutturale dei PDF digitali avviata",
     sourceTextExtracted: "Contenuto digitale convertito in Markdown",
+    sourceCacheHit: "Documento invariato: estrazione recuperata dalla cache SHA-256",
     wikiName: "Nome della wiki",
     folder: "Cartella",
     browse: "Sfoglia…",
@@ -143,6 +144,32 @@ const messages = {
     providerLocalModel: "Modelli locali",
     providerSecurityHint: "Le credenziali restano nel provider o in Gestione credenziali Windows.",
     providerLater: "Il collegamento del provider sarà configurato nel setup dedicato.",
+    chatEyebrow: "Assistente della wiki",
+    chatTitle: "Chat con la tua conoscenza",
+    chatProviderRequired: "Collega un provider AI",
+    chatProviderRequiredHint:
+      "Seleziona il provider principale: verrà usato automaticamente anche in questa wiki.",
+    chatWelcome: "Cosa vuoi approfondire?",
+    chatWelcomeHint:
+      "Fai domande sui documenti importati, confronta concetti o chiedi una spiegazione dettagliata.",
+    chatYou: "Tu",
+    chatActivity: "Attività",
+    chatThinking: "Sto analizzando la knowledge base…",
+    chatPlaceholder: "Chiedi qualcosa sui documenti della wiki…",
+    chatSend: "Invia messaggio",
+    chatComposerHint: "Invio per spedire · Maiusc+Invio per andare a capo",
+    chatShowFlow: "Mostra flusso CLI",
+    chatHideFlow: "Nascondi flusso CLI",
+    chatExpand: "Espandi chat",
+    chatCollapse: "Riduci chat",
+    chatIngestTitle: "Costruisci la knowledge base",
+    chatIngestReady: "I documenti sono pronti per concetti, entità, sintesi e indici.",
+    chatIngestDisabled: "Completa prima l’elaborazione di almeno un documento.",
+    chatIngestProviderUnsupported:
+      "Per ora l’ingestione con scrittura è disponibile con Codex, Claude Code e Antigravity.",
+    chatIngestButton: "Ingest",
+    chatIngestStarted: "Ingestione della knowledge base avviata.",
+    chatIngestWorking: "Ingestione in corso…",
     performance: "Prestazioni",
     gpuAcceleration: "Accelerazione GPU",
     gpuEnabled: "GPU attiva",
@@ -169,6 +196,11 @@ const messages = {
     errorGeneric: "Non è stato possibile completare l’operazione.",
     errorUnsupportedSource: "Seleziona soltanto file PDF, DOCX, TXT o Markdown esistenti.",
     errorNoSources: "Seleziona almeno un documento.",
+    errorProviderRequired: "Seleziona un provider AI per usare questa funzione.",
+    errorProviderNotReady: "Completa installazione o accesso del provider AI selezionato.",
+    errorNoExtractedSources: "Elabora almeno un documento prima di avviare Ingest.",
+    errorProviderIngestUnavailable:
+      "Il provider selezionato supporta la chat, ma non ancora l’ingestione agentica.",
   },
   en: {
     appName: "LLM Wiki",
@@ -238,6 +270,7 @@ const messages = {
     pdfOcrRequired: "PDF has no selectable text: OCR required",
     pdfDirectBatchStarted: "Structured digital PDF extraction started",
     sourceTextExtracted: "Digital content converted to Markdown",
+    sourceCacheHit: "Unchanged document: extraction restored from the SHA-256 cache",
     wikiName: "Wiki name",
     folder: "Folder",
     browse: "Browse…",
@@ -312,6 +345,32 @@ const messages = {
     providerLocalModel: "Local models",
     providerSecurityHint: "Credentials remain with the provider or in Windows Credential Manager.",
     providerLater: "Provider connection will be configured in its dedicated setup.",
+    chatEyebrow: "Wiki assistant",
+    chatTitle: "Chat with your knowledge",
+    chatProviderRequired: "Connect an AI provider",
+    chatProviderRequiredHint:
+      "Select the main provider and it will automatically be used in this wiki too.",
+    chatWelcome: "What would you like to explore?",
+    chatWelcomeHint:
+      "Ask about imported documents, compare concepts, or request a detailed explanation.",
+    chatYou: "You",
+    chatActivity: "Activity",
+    chatThinking: "Analyzing the knowledge base…",
+    chatPlaceholder: "Ask something about the wiki documents…",
+    chatSend: "Send message",
+    chatComposerHint: "Enter to send · Shift+Enter for a new line",
+    chatShowFlow: "Show CLI flow",
+    chatHideFlow: "Hide CLI flow",
+    chatExpand: "Expand chat",
+    chatCollapse: "Collapse chat",
+    chatIngestTitle: "Build the knowledge base",
+    chatIngestReady: "Documents are ready for concepts, entities, syntheses, and indexes.",
+    chatIngestDisabled: "Finish processing at least one document first.",
+    chatIngestProviderUnsupported:
+      "Write-enabled ingest currently supports Codex, Claude Code, and Antigravity.",
+    chatIngestButton: "Ingest",
+    chatIngestStarted: "Knowledge-base ingest started.",
+    chatIngestWorking: "Ingesting…",
     performance: "Performance",
     gpuAcceleration: "GPU acceleration",
     gpuEnabled: "GPU enabled",
@@ -338,6 +397,11 @@ const messages = {
     errorGeneric: "The operation could not be completed.",
     errorUnsupportedSource: "Select only existing PDF, DOCX, TXT, or Markdown files.",
     errorNoSources: "Select at least one document.",
+    errorProviderRequired: "Select an AI provider to use this feature.",
+    errorProviderNotReady: "Finish installing or signing in to the selected AI provider.",
+    errorNoExtractedSources: "Process at least one document before starting Ingest.",
+    errorProviderIngestUnavailable:
+      "The selected provider supports chat, but not agentic ingest yet.",
   },
 } as const;
 
@@ -364,7 +428,17 @@ export function formatAppError(reason: unknown, messages: Messages): string {
     internal: messages.errorGeneric,
     unsupported_source: messages.errorUnsupportedSource,
     no_sources: messages.errorNoSources,
+    provider_required: messages.errorProviderRequired,
+    provider_not_ready: messages.errorProviderNotReady,
+    provider_model_required: messages.errorProviderNotReady,
+    provider_key_required: messages.errorProviderNotReady,
+    no_extracted_sources: messages.errorNoExtractedSources,
+    provider_ingest_unavailable: messages.errorProviderIngestUnavailable,
   };
   if (code && localized[code]) return localized[code];
+  if (typeof reason === "object" && reason !== null && "message" in reason) {
+    const message = String(reason.message).trim();
+    if (message) return message;
+  }
   return reason instanceof Error ? reason.message : messages.errorGeneric;
 }

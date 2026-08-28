@@ -11,7 +11,7 @@ from typing import Any, TextIO
 from .contracts import CONTRACT_VERSION, ErrorCategory, IpcEnvelope, JobState, MessageType
 from .ingestion import IngestionCancelled, JobProcessor
 
-WORKER_VERSION = "0.8.2"
+WORKER_VERSION = "0.9.0"
 CAPABILITIES = ("handshake", "progress", "cancellation", "ingest_documents", "job_logs")
 
 

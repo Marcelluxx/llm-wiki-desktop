@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag, for example v0.8.2"
+        description: "Release tag, for example v0.9.0"
         required: true
-        default: "v0.8.2"
+        default: "v0.9.0"
 
 permissions:
   contents: write
@@ -48,8 +48,9 @@ jobs:
         run: |
           npm ci
           npm run version:check
+          $expectedVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
-          if ($tag -ne "v0.8.2") { throw "Version 0.8.2 must be released with tag v0.8.2; received $tag." }
+          if ($tag -ne "v$expectedVersion") { throw "Version $expectedVersion must be released with tag v$expectedVersion; received $tag." }
 
       - name: Build private Python and Java runtime
         shell: pwsh
@@ -78,7 +79,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: LLM-Wiki-Desktop-0.8.2-Windows-x64
+          name: LLM-Wiki-Desktop-Windows-x64
           path: release-assets/*
           compression-level: 0
 
@@ -88,8 +89,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $notesFile = "docs/releases/$tag.md"
+          if (-not (Test-Path -LiteralPath $notesFile)) {
+            $notesFile = "docs/releases/v$version.md"
+          }
           gh release view $tag *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --draft --title "LLM Wiki Desktop 0.8.2" --notes-file "docs/releases/v0.8.2.md"
+            gh release create $tag --draft --title "LLM Wiki Desktop $version" --notes-file $notesFile
           }
           gh release upload $tag "release-assets/LLM-Wiki-Setup.exe" "release-assets/SHA256SUMS.txt" --clobber

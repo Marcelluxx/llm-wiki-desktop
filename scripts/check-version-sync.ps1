@@ -1,7 +1,15 @@
+param(
+    [string]$ExpectedVersion = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$expected = "0.8.2"
+$expected = if ([string]::IsNullOrWhiteSpace($ExpectedVersion)) {
+    (Get-Content -LiteralPath (Join-Path $repositoryRoot "package.json") -Raw | ConvertFrom-Json).version
+} else {
+    $ExpectedVersion
+}
 
 function Assert-JsonVersion([string]$RelativePath) {
     $path = Join-Path $repositoryRoot $RelativePath

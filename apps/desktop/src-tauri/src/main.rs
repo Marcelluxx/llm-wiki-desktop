@@ -2397,7 +2397,7 @@ async fn worker_handshake_ready(
     request_id: &str,
 ) -> bool {
     let Ok(Ok(Some(line))) =
-        tokio::time::timeout(std::time::Duration::from_secs(5), lines.next_line()).await
+        tokio::time::timeout(std::time::Duration::from_secs(30), lines.next_line()).await
     else {
         return false;
     };
@@ -2565,7 +2565,7 @@ fn finish_with_error(
 
 fn worker_command() -> Command {
     let python = worker_python();
-    let mut command = Command::new(python);
+    let mut command = Command::new(&python);
     command
         .arg("-m")
         .arg("llm_wiki_engine.cli")
@@ -2574,7 +2574,7 @@ fn worker_command() -> Command {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    configure_packaged_java(&mut command);
+    configure_packaged_runtime_environment(&mut command, &python);
     #[cfg(windows)]
     hide_async_command_window(&mut command);
     command
@@ -2608,19 +2608,41 @@ fn packaged_runtime_root() -> Option<PathBuf> {
     .find(|root| root.join("python").join("python.exe").is_file())
 }
 
-fn configure_packaged_java(command: &mut Command) {
+fn configure_packaged_runtime_environment(command: &mut Command, python_path: &Path) {
+    if let Some(runtime_root) = packaged_runtime_root() {
+        let python_dir = runtime_root.join("python");
+        if python_dir.is_dir() {
+            command.env("PYTHONHOME", &python_dir);
+        }
+        command.env_remove("PYTHONPATH");
+    }
+
     let java_home = std::env::var_os("LLM_WIKI_JAVA_HOME")
         .map(PathBuf::from)
         .or_else(|| packaged_runtime_root().map(|root| root.join("java")));
-    let Some(java_home) = java_home.filter(|path| path.join("bin/java.exe").is_file()) else {
-        return;
-    };
-    command.env("JAVA_HOME", &java_home);
-    let java_bin = java_home.join("bin");
+
+    let mut path_entries = Vec::new();
+
+    if let Some(python_dir) = python_path.parent() {
+        path_entries.push(python_dir.to_path_buf());
+        path_entries.push(python_dir.join("Scripts"));
+        path_entries.push(python_dir.join("DLLs"));
+    }
+
+    if let Some(ref java_home_path) = java_home
+        .as_ref()
+        .filter(|path| path.join("bin/java.exe").is_file() || path.join("bin\\java.exe").is_file())
+    {
+        command.env("JAVA_HOME", java_home_path);
+        path_entries.push(java_home_path.join("bin"));
+    }
+
     let inherited = std::env::var_os("PATH")
         .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
         .unwrap_or_default();
-    if let Ok(path) = std::env::join_paths(std::iter::once(java_bin).chain(inherited)) {
+    path_entries.extend(inherited);
+
+    if let Ok(path) = std::env::join_paths(path_entries) {
         command.env("PATH", path);
     }
 }

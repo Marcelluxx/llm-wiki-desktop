@@ -1800,7 +1800,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "llm-wiki-app-core"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -1813,7 +1813,7 @@ dependencies = [
 
 [[package]]
 name = "llm-wiki-desktop"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "llm-wiki-app-core",
  "serde",

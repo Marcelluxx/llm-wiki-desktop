@@ -1,4 +1,4 @@
-# LLM Wiki Desktop 0.8.2
+# LLM Wiki Desktop 0.9.0
 
 LLM Wiki Desktop è un'applicazione per Windows che trasforma PDF, DOCX, TXT e file
 Markdown in una o più knowledge base compatibili con Obsidian. L'estrazione e l'OCR
@@ -249,11 +249,10 @@ Per aggiornare, scarica il nuovo `LLM-Wiki-Setup.exe` dalla Release più recente
 chiudi l'app e avvia il setup. Prima di aggiornare una versione importante è sempre
 consigliato eseguire una copia della propria cartella wiki.
 
-## Stato della versione 0.8.2
+## Stato della versione 0.9.0
 
-La 0.8.2 è la prima release pubblica Windows x64. La pipeline genera inizialmente
-una **bozza di Release**: viene pubblicata solamente dopo un test manuale di
-installazione, avvio, import e disinstallazione su un PC pulito.
+La 0.9.0 è la versione pubblica Windows x64. La pipeline genera automaticamente
+una **bozza di Release** con installer, runtime portabili isolati e checksum SHA-256.
 
 Limitazioni note:
 
@@ -299,10 +298,10 @@ npm run tauri -- build --debug --no-bundle
 Il bootstrap mantiene Rust e le cache del progetto sotto `.tools/` e crea
 l'ambiente Python sotto `.venv/`; entrambe le cartelle sono escluse da Git.
 
-### Creazione della Release 0.8.2
+### Creazione della Release 0.9.0
 
 1. Esegui `npm run version:check` e `.\scripts\quality.ps1`.
-2. Crea e invia il tag `v0.8.2`.
+2. Crea e invia il tag `v0.9.0`.
 3. Il workflow **Release Windows** prepara runtime privati, installer e checksum.
 4. GitHub crea una bozza della Release con `LLM-Wiki-Setup.exe` e
    `SHA256SUMS.txt`.

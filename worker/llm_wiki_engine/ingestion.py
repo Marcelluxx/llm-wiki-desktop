@@ -260,9 +260,7 @@ class JobProcessor:
         staged_sources = [source.raw_path for source in sources]
         output_directory = job_directory / "digital-pdf-output"
         output_directory.mkdir(parents=True, exist_ok=True)
-        client_executable = python_console_script("opendataloader-pdf.exe")
-        if not client_executable.is_file():
-            raise RuntimeError("OpenDataLoader PDF executable is not installed")
+        client_command = opendataloader_pdf_command()
         page_counts = [pdf_page_count(path) for path in staged_sources]
         total_pages = sum(page_counts)
         self._logger.write(
@@ -275,7 +273,7 @@ class JobProcessor:
         log_path = self._logger.path.with_name(f"{self._job_id}-pdf-parser.log")
         with log_path.open("ab") as process_log:
             process = subprocess.Popen(
-                build_pdf_direct_batch_command(client_executable, staged_sources, output_directory),
+                build_pdf_direct_batch_command(client_command, staged_sources, output_directory),
                 stdin=subprocess.DEVNULL,
                 stdout=process_log,
                 stderr=subprocess.STDOUT,
@@ -317,10 +315,8 @@ class JobProcessor:
             raise ValueError("The selected PDFs contain no pages")
         port = available_local_port()
         server_log_path = self._logger.path.with_name(f"{self._job_id}-ocr-server.log")
-        server_executable = python_console_script("opendataloader-pdf-hybrid.exe")
-        client_executable = python_console_script("opendataloader-pdf.exe")
-        if not server_executable.is_file() or not client_executable.is_file():
-            raise RuntimeError("OpenDataLoader hybrid executables are not installed")
+        server_command = opendataloader_hybrid_server_command()
+        client_command = opendataloader_pdf_command()
 
         ocr_device = preferred_ocr_device()
         if ocr_device == "cpu" and nvidia_gpu_is_present():
@@ -342,7 +338,7 @@ class JobProcessor:
         with server_log_path.open("ab") as server_log:
             server = subprocess.Popen(
                 [
-                    str(server_executable),
+                    *server_command,
                     "--host",
                     "127.0.0.1",
                     "--port",
@@ -375,7 +371,7 @@ class JobProcessor:
                 )
                 log_offset = server_log_path.stat().st_size
                 command = build_pdf_batch_command(
-                    client_executable, staged_sources, output_directory, port
+                    client_command, staged_sources, output_directory, port
                 )
                 client = subprocess.Popen(
                     command,
@@ -695,14 +691,27 @@ def ocr_progress(completed_pages: int, total_pages: int) -> float:
     return 0.72 + (0.16 * completed_pages / max(total_pages, 1))
 
 
+def opendataloader_pdf_command() -> list[str]:
+    return [sys.executable, "-m", "opendataloader_pdf.wrapper"]
+
+
+def opendataloader_hybrid_server_command() -> list[str]:
+    return [sys.executable, "-m", "opendataloader_pdf.hybrid_server"]
+
+
 def build_pdf_batch_command(
-    client_executable: Path,
+    client_executable: Path | str | list[str],
     staged_sources: list[Path],
     output_directory: Path,
     port: int,
 ) -> list[str]:
+    prefix = (
+        [str(client_executable)]
+        if isinstance(client_executable, (str, Path))
+        else [str(part) for part in client_executable]
+    )
     return [
-        str(client_executable),
+        *prefix,
         *[str(path) for path in staged_sources],
         "--output-dir",
         str(output_directory),
@@ -720,12 +729,17 @@ def build_pdf_batch_command(
 
 
 def build_pdf_direct_batch_command(
-    client_executable: Path,
+    client_executable: Path | str | list[str],
     staged_sources: list[Path],
     output_directory: Path,
 ) -> list[str]:
+    prefix = (
+        [str(client_executable)]
+        if isinstance(client_executable, (str, Path))
+        else [str(part) for part in client_executable]
+    )
     return [
-        str(client_executable),
+        *prefix,
         *[str(path) for path in staged_sources],
         "--output-dir",
         str(output_directory),

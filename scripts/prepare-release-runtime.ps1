@@ -55,6 +55,24 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & $uvCommand.Source pip install --python $packagedPython --system --break-system-packages --no-deps .
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    Write-Host "Bundling MSVC runtime DLLs..."
+    $vcDlls = @(
+        "msvcp140.dll",
+        "msvcp140_1.dll",
+        "msvcp140_2.dll",
+        "msvcp140_atomic_wait.dll",
+        "msvcp140_codecvt_ids.dll",
+        "vcomp140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll"
+    )
+    foreach ($dll in $vcDlls) {
+        $sysDll = Join-Path $env:SystemRoot "System32\$dll"
+        if (Test-Path -LiteralPath $sysDll) {
+            Copy-Item -LiteralPath $sysDll -Destination (Join-Path $pythonTarget $dll) -Force
+        }
+    }
 }
 finally {
     Pop-Location
@@ -107,7 +125,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $manifest = [ordered]@{
-    applicationVersion = "0.8.2"
+    applicationVersion = (Get-Content -LiteralPath (Join-Path $repositoryRoot "package.json") -Raw | ConvertFrom-Json).version
     architecture = "x86_64"
     pythonVersion = (& $packagedPython --version 2>&1).ToString()
     javaVersion = (& $packagedJava -version 2>&1 | Select-Object -First 1).ToString()

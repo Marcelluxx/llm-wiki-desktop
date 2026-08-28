@@ -6,7 +6,7 @@ Updated: 2026-08-28
 
 Milestone 6 — provider-neutral chat and agentic ingest frontend: in progress.
 
-Release candidate version: 0.8.2.
+Release candidate version: 0.9.0.
 
 ## Completed outcomes
 
